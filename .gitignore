@@ -12,3 +12,7 @@ data/*.db-*
 coverage/
 calibration.txt
 bench.txt
+data/backups/
+data/*.corrupt-*
+*.restoring
+.compose.env

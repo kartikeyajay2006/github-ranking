@@ -46,7 +46,8 @@ try {
   } else if (cmd === "check") {
     const r = quick(dbFile);
     const c = new DatabaseSync(dbFile, { readOnly: true });
-    const n = (t) => c.prepare(`SELECT COUNT(*) AS n FROM ${t}`).get().n;
+    const tables = new Set(c.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((r) => r.name));
+    const n = (t) => (tables.has(t) ? c.prepare(`SELECT COUNT(*) AS n FROM ${t}`).get().n : "–");
     console.log(`${dbFile}: ${r}\nprofiles ${n("profiles")} · individuals ${n("individuals")} · teams ${n("teams")} · imports ${n("import_jobs")} · import rows ${n("import_teams")}`);
     c.close();
     if (r !== "ok") process.exitCode = 1;

@@ -1,0 +1,9 @@
+
+> github-ranking@1.0.0 start
+> next start -p 3311
+
+▲ Next.js 16.4.6
+- Local:         http://localhost:3311
+- Network:       http://192.168.1.45:3311
+✓ Ready in 126ms
+✓ Running next.config.ts took 30ms
