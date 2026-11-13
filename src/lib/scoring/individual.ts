@@ -14,7 +14,7 @@ import type {
 } from "../types";
 import { DAY, clamp01, daysSince, logRef, plural, ramp, round1 } from "./curves";
 
-export const METHODOLOGY_VERSION = "2026.11-r2";
+export const METHODOLOGY_VERSION = "2026.11-r3";
 
 /**
  * Every threshold below is a fixed constant. Nothing is normalised against a cohort, so an
@@ -276,7 +276,16 @@ function opensource(ev: ProfileEvidence, pulls: PullBreakdown) {
   const closedOutside = closedUnmerged * outsideShare;
   const decided = outsidePulls.length * scale + closedOutside;
   const acceptance = decided ? ((outsidePulls.length * scale + 1) / (decided + 2)) * Math.min(1, decided / 10) : 0;
-  const engagement = issues + ev.year.reviewsExternal;
+  // Issues and reviews count only outside the person's own and team repositories.
+  const team = teamRepos(ev);
+  const issueSample = ev.external.issueSample;
+  const outsideIssues = issueSample
+    ? Math.round((issueSample.filter((i) => !team.has(i.repo.toLowerCase())).length / Math.max(1, issueSample.length)) * issues)
+    : issues;
+  const outsideReviews = ev.year.reviewsByRepo
+    ? ev.year.reviewsByRepo.filter((r) => !team.has(r.repo.toLowerCase())).reduce((s, r) => s + r.count, 0)
+    : ev.year.reviewsExternal;
+  const engagement = outsideIssues + outsideReviews;
 
   const excluded = pulls.team + pulls.farm;
   const factors: Factor[] = [
@@ -318,7 +327,11 @@ function opensource(ev: ProfileEvidence, pulls: PullBreakdown) {
       label: "Issues & reviews",
       value: logRef(engagement, 60),
       weight: 0.15,
-      evidence: `${plural(issues, "issue")} filed elsewhere; ${plural(ev.year.reviewsExternal, "review")} on others' PRs this year`,
+      evidence:
+        `${plural(outsideIssues, "issue")} filed in outside projects; ${plural(outsideReviews, "review")} on outside PRs this year` +
+        (issues - outsideIssues + ev.year.reviewsExternal - outsideReviews > 0
+          ? ` (${issues - outsideIssues + ev.year.reviewsExternal - outsideReviews} in own or team repositories not counted)`
+          : ""),
     },
   ];
   return dimension("opensource", factors);
@@ -409,12 +422,19 @@ function breadth(ev: ProfileEvidence, repos: RepoAssessment[]) {
  * Repositories count as team work when they own them, are an insider there (member, collaborator,
  * self-merging), or wrote a substantial share of the code.
  */
+/** Repositories (lower-case) where the person works from the inside: insider or self-merged PRs, insider issues, or a quarter of the code. */
+export function teamRepos(ev: ProfileEvidence): Set<string> {
+  const team = new Set<string>();
+  for (const p of ev.external.sample) if (classifyPull(p) === "team") team.add(p.repo.toLowerCase());
+  for (const i of ev.external.issueSample ?? []) if (INSIDER.has(i.association)) team.add(i.repo.toLowerCase());
+  for (const r of ev.inspected) if (r.owned === false && (authorship(r) ?? 0) >= 0.25) team.add(r.nameWithOwner.toLowerCase());
+  return team;
+}
+
 export function workSplit(ev: ProfileEvidence): { own: number; external: number } {
   if (!ev.year.byRepo) return { own: ev.year.commitsOwn + ev.year.pullsOwn, external: ev.year.commitsExternal + ev.year.pullsExternal };
   const login = ev.login.toLowerCase();
-  const team = new Set<string>();
-  for (const p of ev.external.sample) if (classifyPull(p) === "team") team.add(p.repo.toLowerCase());
-  for (const r of ev.inspected) if (r.owned === false && (authorship(r) ?? 0) >= 0.25) team.add(r.nameWithOwner.toLowerCase());
+  const team = teamRepos(ev);
   let own = 0;
   let external = 0;
   for (const r of ev.year.byRepo) {

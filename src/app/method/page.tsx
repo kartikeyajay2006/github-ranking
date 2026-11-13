@@ -203,7 +203,10 @@ export default function MethodPage() {
               <tr>
                 <td>Issues &amp; reviews</td>
                 <td className="num">15%</td>
-                <td>Issues filed elsewhere (all time) plus reviews on others&rsquo; PRs (12 months); log curve to 60</td>
+                <td>
+                  Issues filed (all time) and PR reviews given (12 months) in outside projects only; issues and reviews in own or team repositories don&rsquo;t
+                  count. Log curve to 60
+                </td>
               </tr>
             </tbody>
           </table>

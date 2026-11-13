@@ -346,6 +346,18 @@ const MERGED_PULLS = /* GraphQL */ `
   }
 `;
 
+const ISSUES = /* GraphQL */ `
+  query Issues($q: String!) {
+    search(query: $q, type: ISSUE, first: 100) {
+      nodes { ... on Issue { authorAssociation repository { nameWithOwner } } }
+    }
+  }
+`;
+
+interface IssuesData {
+  search: { nodes: ({ authorAssociation?: string; repository?: { nameWithOwner: string } } | null)[] };
+}
+
 interface CountsData {
   merged: { issueCount: number };
   closed: { issueCount: number };
@@ -402,7 +414,7 @@ async function mergedPulls(login: string): Promise<ExternalPullRequest[]> {
 async function collectExternal(login: string): Promise<ProfileEvidence["external"]> {
   // "-user:" excludes every repository owned by the account itself.
   const scope = `author:${login} -user:${login}`;
-  const [{ data }, sample] = await Promise.all([
+  const [{ data }, sample, issues] = await Promise.all([
     graphql<CountsData>(EXTERNAL_COUNTS, {
       merged: `is:pr is:merged ${scope}`,
       closed: `is:pr is:closed is:unmerged ${scope}`,
@@ -410,13 +422,18 @@ async function collectExternal(login: string): Promise<ProfileEvidence["external
       issues: `is:issue ${scope}`,
     }),
     mergedPulls(login),
+    graphql<IssuesData>(ISSUES, { q: `is:issue ${scope} sort:created-desc` }),
   ]);
+  const issueSample = issues.data.search.nodes
+    .filter((n): n is { authorAssociation: string; repository: { nameWithOwner: string } } => !!n?.repository)
+    .map((n) => ({ repo: n.repository.nameWithOwner, association: n.authorAssociation ?? "NONE" }));
   return {
     merged: Math.max(data.merged.issueCount, sample.length),
     closedUnmerged: data.closed.issueCount,
     open: data.open.issueCount,
     issues: data.issues.issueCount,
     sample,
+    issueSample,
   };
 }
 
@@ -570,6 +587,9 @@ export async function collectProfile(rawLogin: string): Promise<{ evidence: Prof
         issuesExternal: issues.external,
         reposTouched: touched.size,
         byRepo: [...byRepo.values()],
+        reviewsByRepo: cc.pullRequestReviewContributionsByRepository
+          .filter((r) => r.repository.owner.login.toLowerCase() !== user.login.toLowerCase())
+          .map((r) => ({ repo: r.repository.nameWithOwner, count: r.contributions.totalCount })),
       },
       external,
       fetchedAt: to.toISOString(),

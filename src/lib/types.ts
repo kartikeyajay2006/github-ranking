@@ -93,6 +93,8 @@ export interface ProfileEvidence {
     reposTouched: number;
     /** Commits and pull requests per repository over the window. */
     byRepo?: { repo: string; owner: string; commits: number; pulls: number }[];
+    /** PR reviews per repository over the window (repositories the account doesn't own). */
+    reviewsByRepo?: { repo: string; count: number }[];
   };
   external: {
     merged: number;
@@ -101,6 +103,8 @@ export interface ProfileEvidence {
     issues: number;
     /** Merged pull requests outside owned repositories, most recent first (up to 200). */
     sample: ExternalPullRequest[];
+    /** Issues filed outside owned repositories, most recent first (up to 100), with the author's role there. */
+    issueSample?: { repo: string; association: string }[];
   };
   fetchedAt: string;
 }

@@ -376,3 +376,20 @@ describe("followers", () => {
     expect(popular - quiet).toBeLessThanOrEqual(DIMENSION_WEIGHTS.impact * 5 + 0.1);
   });
 });
+
+describe("issues and reviews", () => {
+  it("only count in outside projects", () => {
+    const sample = [{ repo: "myorg/startup", stars: 3, mergedAt: daysAgo(2), association: "MEMBER", selfMerged: true, lines: 50 }];
+    const insider = evidence({
+      external: { merged: 1, closedUnmerged: 0, open: 0, issues: 40, sample, issueSample: Array.from({ length: 40 }, () => ({ repo: "myorg/startup", association: "MEMBER" })) },
+      year: { ...evidence().year, reviewsExternal: 20, reviewsByRepo: [{ repo: "myorg/startup", count: 20 }] },
+    });
+    const outside = evidence({
+      external: { merged: 1, closedUnmerged: 0, open: 0, issues: 40, sample, issueSample: Array.from({ length: 40 }, () => ({ repo: "big/lib", association: "NONE" })) },
+      year: { ...evidence().year, reviewsExternal: 20, reviewsByRepo: [{ repo: "big/lib", count: 20 }] },
+    });
+    const value = (e: ProfileEvidence) => assess(e, NOW).dimensions.find((d) => d.key === "opensource")!.factors.find((f) => f.key === "engagement")!.value;
+    expect(value(insider)).toBe(0);
+    expect(value(outside)).toBeGreaterThan(0.9);
+  });
+});
