@@ -10,5 +10,5 @@ export default defineConfig({
       "server-only": here("./tests/support/empty.ts"),
     },
   },
-  test: { include: ["tests/**/*.test.ts"], testTimeout: 120_000 },
+  test: { include: ["tests/**/*.test.ts"], testTimeout: 120_000, env: { BACKUP_DISABLED: "1" } },
 });

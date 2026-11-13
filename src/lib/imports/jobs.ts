@@ -1,5 +1,6 @@
 import "server-only";
 import { randomBytes } from "node:crypto";
+import { backupNow } from "../backup";
 import { db, transaction } from "../db";
 import { type ExtractedMember, type ExtractedTeam, leaderOf } from "./extract";
 
@@ -198,6 +199,8 @@ export function retryFailed(id: string) {
 }
 
 export function deleteJob(id: string) {
+  // A deleted import takes its teams with it: keep a snapshot first (at most one every five minutes).
+  backupNow(db(), "before-delete", { minIntervalMs: 5 * 60_000 });
   transaction(() => {
     db().prepare("DELETE FROM teams WHERE job_id = ?").run(id);
     db().prepare("DELETE FROM import_jobs WHERE id = ?").run(id);

@@ -29,6 +29,7 @@ Paste a username and get a score out of 100. Every point traces back to public G
 - [Fairness guarantees](#fairness-guarantees)
 - [Quick start](#quick-start)
 - [Configuration](#configuration)
+- [Data safety](#data-safety)
 - [Deployment](#deployment)
 - [Capacity](#capacity)
 - [Architecture](#architecture)
@@ -212,8 +213,38 @@ npm start
 | `GITHUB_TOKEN` | output of `gh auth token` | Token for GitHub's GraphQL API. Only public data is read, so a fine-grained token with no extra permissions is enough. |
 | `DATABASE_PATH` | `data/ranking.db` | SQLite file holding analyses, standings and teams |
 | `ANALYSIS_TTL_HOURS` | `12` | How long a stored analysis is reused before a fresh crawl |
+| `ADMIN_PASSWORD` | unset | When set, every page and API requires HTTP Basic auth (user `ADMIN_USER`, default `admin`). Set it on any public deployment |
+| `BACKUP_DIR` | `data/backups` | Where snapshots are kept |
+| `BACKUP_INTERVAL_HOURS` | `1` | Snapshot interval while data is changing |
+| `BACKUP_COMMAND` | unset | Shell command run after each snapshot (`$1` = file), for off-machine copies |
+| `ANTHROPIC_API_KEY` | unset | Enables optional AI extraction on the Upload page |
 
 ---
+
+## Data safety
+
+All data lives in one SQLite file (`DATABASE_PATH`). It is protected in layers:
+
+| Layer | What it does |
+|---|---|
+| Durable writes | WAL journal with `synchronous=FULL`: a committed write survives a crash or power loss |
+| Snapshots | `VACUUM INTO` snapshots, consistent even while imports are writing: at start-up, every hour while data is changing, before schema migrations and before an import is deleted |
+| Verification | Every snapshot passes an integrity check before it is kept; a failing one is discarded and logged |
+| Rotation | The last 48 snapshots plus one per day for 30 days (`BACKUP_DIR`, default `data/backups`) |
+| Off-machine copies | Optional `BACKUP_COMMAND` runs after each snapshot with its path as `$1`, e.g. `aws s3 cp "$1" s3://my-bucket/ranking/` |
+| Self-repair | On start-up, a database that fails its integrity check is moved aside and the newest healthy snapshot is restored automatically |
+| Clean shutdown | The write-ahead log is folded into the main file on exit, so the `.db` file alone is always a complete copy |
+
+Maintenance commands:
+
+```bash
+npm run db -- check            # integrity check and row counts
+npm run db -- backup           # verified snapshot now
+npm run db -- list             # snapshots, newest first
+npm run db -- restore <file>   # stop the app first; the current database is snapshotted before it is replaced
+```
+
+`GET /api/health` reports liveness, row counts, running imports and the time of the latest snapshot.
 
 ## Deployment
 
@@ -221,7 +252,7 @@ The app keeps state in a SQLite file, so it needs **persistent disk**. A VM, a c
 
 > **Serverless platforms such as Vercel are not supported as-is.** Their file systems are ephemeral, so the database would be lost. Running there needs a hosted database (for example Postgres) behind `src/lib/store.ts`.
 
-Anyone who can reach the app can add, remove and edit entries. Put it behind your own access control (VPN, reverse-proxy auth) before exposing it publicly.
+Set `ADMIN_PASSWORD` before exposing the app publicly: without it, anyone who can reach the app can add, remove and edit entries.
 
 ---
 

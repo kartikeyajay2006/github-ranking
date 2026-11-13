@@ -14,7 +14,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run --exclude \"tests/**/*.live.test.ts\"",
     "calibrate": "vitest run tests/calibrate.live.test.ts",
-    "bench": "vitest run tests/bench.live.test.ts"
+    "bench": "vitest run tests/bench.live.test.ts",
+    "db": "node scripts/db.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "1.8.0",

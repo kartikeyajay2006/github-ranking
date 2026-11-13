@@ -1,7 +1,8 @@
 import "server-only";
 import { mkdirSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { backupNow, databaseFile, recoverIfCorrupt, scheduleBackups } from "./backup";
 
 const SCHEMA = /* SQL */ `
   PRAGMA journal_mode = WAL;
@@ -78,6 +79,12 @@ const SCHEMA = /* SQL */ `
 /** Additive migrations for databases created by earlier versions. */
 function migrate(conn: DatabaseSync) {
   const columns = (table: string) => (conn.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((c) => c.name);
+  const pending =
+    !columns("teams").includes("job_id") ||
+    !columns("profiles").includes("summary") ||
+    !columns("teams").includes("absent") ||
+    !columns("import_jobs").includes("missing_policy");
+  if (pending && (conn.prepare("SELECT COUNT(*) AS n FROM profiles").get() as { n: number }).n > 0) backupNow(conn, "pre-migration");
   if (!columns("teams").includes("job_id")) conn.exec("ALTER TABLE teams ADD COLUMN job_id TEXT");
   if (!columns("profiles").includes("summary")) conn.exec("ALTER TABLE profiles ADD COLUMN summary TEXT");
   if (!columns("teams").includes("absent")) conn.exec("ALTER TABLE teams ADD COLUMN absent TEXT");
@@ -89,12 +96,26 @@ const globalForDb = globalThis as unknown as { __rankingDb?: DatabaseSync };
 
 export function db(): DatabaseSync {
   if (!globalForDb.__rankingDb) {
-    const file = resolve(/*turbopackIgnore: true*/ process.env.DATABASE_PATH || "data/ranking.db");
+    const file = databaseFile();
     mkdirSync(dirname(file), { recursive: true });
+    const recovered = recoverIfCorrupt();
+    if (recovered) console.error(`[db] ${recovered}`);
     const conn = new DatabaseSync(file);
+    // FULL: a committed write survives power loss, not just a crash. busy_timeout: CLI tools may hold a lock briefly.
+    conn.exec("PRAGMA synchronous = FULL; PRAGMA busy_timeout = 5000;");
     conn.exec(SCHEMA);
     migrate(conn);
     globalForDb.__rankingDb = conn;
+    scheduleBackups(conn);
+    // Fold the write-ahead log into the main file on shutdown, so the .db file alone is a complete copy.
+    process.once("exit", () => {
+      try {
+        conn.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+        conn.close();
+      } catch {
+        /* already closed */
+      }
+    });
   }
   return globalForDb.__rankingDb;
 }
