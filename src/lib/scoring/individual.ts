@@ -14,7 +14,7 @@ import type {
 } from "../types";
 import { DAY, clamp01, daysSince, logRef, plural, ramp, round1 } from "./curves";
 
-export const METHODOLOGY_VERSION = "2026.11-r5";
+export const METHODOLOGY_VERSION = "2026.11-r6";
 
 /**
  * Every threshold below is a fixed constant. Nothing is normalised against a cohort, so an
@@ -479,6 +479,15 @@ function depth(repos: RepoAssessment[]) {
 function breadth(ev: ProfileEvidence, repos: RepoAssessment[]) {
   const languages = new Set(ev.repos.filter((r) => r.language && (r.diskKb >= 100 || r.stars >= 1)).map((r) => r.language!));
   const substantial = repos.filter((r) => r.quality >= 45).length;
+  // Other people's repositories only: touching your own repositories is not collaboration.
+  const others = ev.year.byRepo
+    ? new Set(
+        [
+          ...ev.year.byRepo.filter((r) => r.owner.toLowerCase() !== ev.login.toLowerCase()).map((r) => r.repo.toLowerCase()),
+          ...(ev.year.reviewsByRepo ?? []).map((r) => r.repo.toLowerCase()),
+        ],
+      ).size
+    : ev.year.reposTouched;
   const factors: Factor[] = [
     {
       key: "languages",
@@ -488,7 +497,13 @@ function breadth(ev: ProfileEvidence, repos: RepoAssessment[]) {
       evidence: languages.size ? [...languages].slice(0, 8).join(", ") + (languages.size > 8 ? ` +${languages.size - 8}` : "") : "No primary languages detected",
     },
     { key: "substantial", label: "Substantial projects", value: ramp(substantial, 8), weight: 0.35, evidence: `${plural(substantial, "repository", "repositories")} scoring 45+ on quality` },
-    { key: "surface", label: "Collaboration surface", value: ramp(ev.year.reposTouched, 25), weight: 0.25, evidence: `Contributed to ${plural(ev.year.reposTouched, "repository", "repositories")} this year` },
+    {
+      key: "surface",
+      label: "Collaboration surface",
+      value: ramp(others, 10),
+      weight: 0.25,
+      evidence: `Committed to, opened PRs in or reviewed ${plural(others, "repository", "repositories")} owned by other people this year`,
+    },
   ];
   return dimension("breadth", factors);
 }

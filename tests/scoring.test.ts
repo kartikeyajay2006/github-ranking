@@ -417,3 +417,14 @@ describe("build depth", () => {
     expect(depthOf(tiny).factors.find((f) => f.key === "led")!.value).toBe(0);
   });
 });
+
+describe("collaboration surface", () => {
+  it("counts only other people's repositories", () => {
+    const surface = (byRepo: { repo: string; owner: string; commits: number; pulls: number }[]) =>
+      assess(evidence({ year: { ...evidence().year, byRepo, reviewsByRepo: [] } }), NOW).dimensions.find((d) => d.key === "breadth")!.factors.find((f) => f.key === "surface")!.value;
+    const own = Array.from({ length: 30 }, (_, i) => ({ repo: `dev/r${i}`, owner: "dev", commits: 5, pulls: 0 }));
+    const others = Array.from({ length: 10 }, (_, i) => ({ repo: `org${i}/r`, owner: `org${i}`, commits: 5, pulls: 0 }));
+    expect(surface(own)).toBe(0);
+    expect(surface(others)).toBe(1);
+  });
+});

@@ -322,7 +322,7 @@ export default function MethodPage() {
               <tr>
                 <td>Collaboration surface</td>
                 <td className="num">25%</td>
-                <td>Repositories contributed to in the last 12 months; full at 25</td>
+                <td>Repositories owned by other people that they committed to, opened PRs in or reviewed in the last 12 months; full at 10</td>
               </tr>
             </tbody>
           </table>

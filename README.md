@@ -119,7 +119,7 @@ Each repository's score is then multiplied by an **authorship factor**, `min(1, 
 
 **Impact & reach:** stars earned (55%, log curve to 5,000), forks (20%, log curve to 500), repositories with 10+ stars (20%, log curve to 10), followers (**5%**, log curve to 1,000; deliberately minor).
 
-**Engineering breadth:** distinct languages (40%, full at 8), repositories scoring 45+ on quality (35%, full at 8), repositories contributed to this year (25%, full at 25).
+**Engineering breadth:** distinct languages (40%, full at 8), repositories scoring 45+ on quality (35%, full at 8), other people's repositories they committed to, opened PRs in or reviewed this year (25%, full at 10).
 </details>
 
 The full specification also lives in the app at **`/method`**.
@@ -170,7 +170,7 @@ The lead carries 1.2× an equal share (`1.2 / n`). Without a designated lead, a 
 - **Absolute thresholds.** Adding, removing or re-analysing anyone never moves another person's score; rankings are a plain sort.
 - **Deterministic.** The same evidence always produces the same score. The scoring functions are pure and unit-tested.
 - **Traceable.** Every profile shows the evidence behind each factor and notes anything that couldn't be measured, such as private contributions or very large histories.
-- **Versioned.** Each assessment records its methodology version (currently `2026.11-r5`). Changing the rules bumps the version, and older snapshots are re-crawled the next time they're requested.
+- **Versioned.** Each assessment records its methodology version (currently `2026.11-r6`). Changing the rules bumps the version, and older snapshots are re-crawled the next time they're requested.
 
 ---
 
