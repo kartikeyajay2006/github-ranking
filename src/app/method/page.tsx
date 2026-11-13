@@ -61,8 +61,9 @@ export default function MethodPage() {
               profile README repository are excluded.
             </li>
             <li>
-              <strong>Individual credit.</strong> A repository is credited by how much of it the person actually wrote, and only pull requests reviewed and
-              merged by someone else count as open-source contribution. Self-merged and team work is credited, but as the person&rsquo;s own projects.
+              <strong>Individual credit.</strong> A repository is credited by how much of it the person actually wrote. Open-source credit goes mainly to pull
+              requests reviewed and merged by someone else; self-merged and team PRs earn a smaller share, and their repositories count as the person&rsquo;s
+              own projects.
             </li>
             <li>
               <strong>Hard-to-fake signals.</strong> Followers carry almost no weight, tiny PRs count less than substantial ones, and contribution-farm
@@ -202,8 +203,8 @@ export default function MethodPage() {
               <strong>Outside</strong>: the author is not an owner, member or collaborator of the repository, and someone else merged it. Only these count here.
             </li>
             <li>
-              <strong>Team</strong>: the author is an insider there, or merged their own PR. This is the person&rsquo;s own or team work and is credited under
-              project quality instead.
+              <strong>Team</strong>: the author is an insider there, or merged their own PR. Nobody outside approved it, so it earns a smaller, separate
+              credit here (15% of this section), and the repositories behind it are credited under project quality and build depth.
             </li>
             <li>
               <strong>Farm</strong>: a repository that exists to collect easy PRs (Hacktoberfest, &ldquo;first contributions&rdquo;, contribution walls,
@@ -214,15 +215,20 @@ export default function MethodPage() {
             <tbody>
               <tr>
                 <td>Peer-reviewed PRs</td>
-                <td className="num">45%</td>
+                <td className="num">40%</td>
                 <td>
                   Outside PRs, each weighted by the project&rsquo;s stature (0.4 for an unknown repository to 1.0 at 2,000+ stars) and by the size of the change
                   (0.35 for a one-liner to 1.0 at 150+ changed lines); log curve to 40 weighted PRs
                 </td>
               </tr>
               <tr>
+                <td>Team &amp; self-merged PRs</td>
+                <td className="num">15%</td>
+                <td>Team PRs, each weighted by the size of the change (0.35 to 1.0); log curve to 60</td>
+              </tr>
+              <tr>
                 <td>Repository reach</td>
-                <td className="num">20%</td>
+                <td className="num">15%</td>
                 <td>Distinct outside repositories that merged their work; log curve to 15</td>
               </tr>
               <tr>
@@ -239,7 +245,7 @@ export default function MethodPage() {
               </tr>
               <tr>
                 <td>Issues &amp; reviews</td>
-                <td className="num">15%</td>
+                <td className="num">10%</td>
                 <td>
                   Issues filed (all time) and PR reviews given (12 months) in outside projects only; issues and reviews in own or team repositories don&rsquo;t
                   count. Log curve to 60

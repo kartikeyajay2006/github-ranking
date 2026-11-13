@@ -14,7 +14,7 @@ import type {
 } from "../types";
 import { DAY, clamp01, daysSince, logRef, plural, ramp, round1 } from "./curves";
 
-export const METHODOLOGY_VERSION = "2026.11-r4";
+export const METHODOLOGY_VERSION = "2026.11-r5";
 
 /**
  * Every threshold below is a fixed constant. Nothing is normalised against a cohort, so an
@@ -23,8 +23,8 @@ export const METHODOLOGY_VERSION = "2026.11-r4";
  */
 export const DIMENSION_WEIGHTS: Record<DimensionKey, number> = {
   projects: 0.3,
-  depth: 0.2,
-  opensource: 0.15,
+  depth: 0.25,
+  opensource: 0.1,
   activity: 0.15,
   impact: 0.12,
   breadth: 0.08,
@@ -290,25 +290,39 @@ function opensource(ev: ProfileEvidence, pulls: PullBreakdown) {
     : ev.year.reviewsExternal;
   const engagement = outsideIssues + outsideReviews;
 
+  // Team and self-merged PRs: real work in other accounts' repositories, but nobody outside approved it.
+  const teamPulls = sample.filter((p) => classifyPull(p) === "team");
+  const teamWeighted = scale * teamPulls.reduce((s, p) => s + prSubstance(p.lines), 0);
+  const teamMerged = Math.round(teamPulls.length * scale);
+
   const excluded = pulls.team + pulls.farm;
   const factors: Factor[] = [
     {
       key: "merged",
       label: "Peer-reviewed PRs",
       value: logRef(weighted, 40),
-      weight: 0.45,
+      weight: 0.4,
       evidence: outsideMerged
         ? `${plural(outsideMerged, "PR")} merged by other maintainers (weighted ${weighted.toFixed(1)} for project stature and size)` +
-          (excluded ? `; ${excluded} team, self-merged or farm PRs not counted here` : "")
+          (excluded ? `; ${excluded} team, self-merged or farm PRs counted separately` : "")
         : merged
           ? `None of ${plural(merged, "merged PR")} were reviewed and merged by outside maintainers`
           : "No merged pull requests outside own repositories",
     },
     {
+      key: "team",
+      label: "Team & self-merged PRs",
+      value: logRef(teamWeighted, 60),
+      weight: 0.15,
+      evidence: teamMerged
+        ? `${plural(teamMerged, "PR")} merged in organisation or teammates' repositories without outside review (weighted ${teamWeighted.toFixed(1)} for size)`
+        : "No team or self-merged PRs in other accounts' repositories",
+    },
+    {
       key: "reach",
       label: "Repository reach",
       value: logRef(real.size, 15),
-      weight: 0.2,
+      weight: 0.15,
       evidence: real.size ? `${plural(real.size, "outside repository", "outside repositories")} accepted their work` : "—",
     },
     {
@@ -329,7 +343,7 @@ function opensource(ev: ProfileEvidence, pulls: PullBreakdown) {
       key: "engagement",
       label: "Issues & reviews",
       value: logRef(engagement, 60),
-      weight: 0.15,
+      weight: 0.1,
       evidence:
         `${plural(outsideIssues, "issue")} filed in outside projects; ${plural(outsideReviews, "review")} on outside PRs this year` +
         (issues - outsideIssues + ev.year.reviewsExternal - outsideReviews > 0

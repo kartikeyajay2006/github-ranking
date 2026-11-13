@@ -315,8 +315,10 @@ describe("pull request classification", () => {
   });
   const oss = (e: ProfileEvidence) => assess(e, NOW).dimensions.find((d) => d.key === "opensource")!;
 
-  it("gives team PRs no open-source credit and farms very little", () => {
+  it("gives team PRs only their own smaller factor, and farms very little", () => {
     expect(oss(teamOnly).factors.find((f) => f.key === "merged")!.value).toBe(0);
+    expect(oss(teamOnly).factors.find((f) => f.key === "team")!.value).toBeGreaterThan(0.5);
+    expect(oss(teamOnly).score).toBeLessThan(oss(outsideOnly).score / 3);
     expect(oss(farmOnly).score).toBeLessThan(oss(outsideOnly).score / 2);
     expect(oss(outsideOnly).score).toBeGreaterThan(oss(base).score);
   });

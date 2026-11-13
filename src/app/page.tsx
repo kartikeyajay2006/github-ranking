@@ -17,7 +17,7 @@ export default async function IndividualsPage() {
           <p className="kicker">Individual standings</p>
           <h1>Who builds, who contributes, and how well.</h1>
           <p className="lede">
-            Each developer is scored out of 100 on their public GitHub evidence alone. Half the score is building: the quality of their projects
+            Each developer is scored out of 100 on their public GitHub evidence alone. Most of the score is building: the quality of their projects
             and how much of them they wrote themselves. The rest is peer-reviewed open-source work, consistency, reach and breadth.
           </p>
         </div>

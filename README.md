@@ -1,45 +1,189 @@
 # github-ranking
 
-Evidence-based assessment and ranking of GitHub engineers and teams.
+**Evidence-based assessment and ranking of GitHub developers and teams.**
 
-Every developer gets a score out of 100 from their public GitHub evidence only. The score covers the quality of their own projects, work merged into other people's repositories, consistency, reach and breadth. Teams get the weighted mean of their members' independent scores.
+Paste a username and get a score out of 100. Every point traces back to public GitHub evidence and a fixed, published rule. The score measures what the person **built themselves**: how good their projects are, how much of them they wrote, and what other maintainers accepted from them. Stars, followers and commit counts can be inflated, so they matter much less.
 
-## Principles
+![Individual standings, dark theme](docs/screenshots/standings-dark.png)
 
-- **One person, one context.** An assessment reads a single account's data and nothing else. No other participant is consulted, compared or used for normalisation.
-- **Absolute thresholds.** Every curve has fixed reference points. Adding, removing or re-analysing anyone never moves another person's score; the ranking is just a sort.
-- **Individual credit.** Repositories are credited by the share of commits the person actually wrote. Only pull requests reviewed and merged by someone else count as open-source contribution. Self-merged and team work counts as the person's own projects instead.
-- **Hard-to-fake signals.** Counts pass through saturating log curves, so volume can't be farmed. Followers carry almost no weight, tiny PRs count less than substantial ones, and contribution-farm repos (Hacktoberfest walls and the like) count for close to nothing.
-- **Traceable.** Each profile shows a score ledger. Every factor is listed with its evidence, its weight and the points it earned, and the points add up to the total.
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/profile-light.png" alt="Developer profile with the score ledger"></td>
+    <td width="50%"><img src="docs/screenshots/team-dark.png" alt="Team page with lead-weighted score composition"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Profile: every factor, its evidence and the points it earned</sub></td>
+    <td align="center"><sub>Team: each member's weight × their own score</sub></td>
+  </tr>
+</table>
 
-## What it measures
+---
 
-| Dimension | Weight | Built from |
+## Contents
+
+- [Why](#why)
+- [How a score is built](#how-a-score-is-built)
+- [What counts as whose work](#what-counts-as-whose-work)
+- [Teams](#teams)
+- [Fairness guarantees](#fairness-guarantees)
+- [Quick start](#quick-start)
+- [Configuration](#configuration)
+- [Deployment](#deployment)
+- [Capacity](#capacity)
+- [Architecture](#architecture)
+- [Development](#development)
+- [Limitations](#limitations)
+- [Roadmap](#roadmap)
+
+---
+
+## Why
+
+The usual ways of judging a GitHub profile are easy to game:
+
+| Common signal | How it gets inflated |
+|---|---|
+| Green squares, commit count | Many tiny commits; backdated commits |
+| "Contributed to N repos" | PRs to your own organisation, self-merged PRs, Hacktoberfest "add your name" repos |
+| Followers | Follow-for-follow |
+| Number of repositories | Dozens of tutorial or empty repositories |
+
+**github-ranking** reads what each person demonstrably built and what outside maintainers chose to accept. It then reports the result as a ledger: each factor, its evidence, its weight and its points, adding up to the total.
+
+---
+
+## How a score is built
+
+Six dimensions, each scored 0–100 and weighted into a total. **55% of the score is building.**
+
+| Dimension | Weight | Question it answers |
+|---|---:|---|
+| **Project quality** | 30% | Are their best projects well-engineered, documented, maintained and used? |
+| **Build depth** | 25% | How much of those projects did *they* write, and how long did they stay with them? |
+| **Activity & consistency** | 15% | Have they been working steadily over the last 12 months? |
+| **Impact & reach** | 12% | Do other people use their work? |
+| **Open-source contribution** | 10% | Has code they wrote been accepted into other people's projects? |
+| **Engineering breadth** | 8% | Range of languages, substantial projects and collaborations |
+
+**Bands:** Exceptional 80+ · Strong 65–80 · Proficient 50–65 · Developing 35–50 · Emerging below 35.
+
+Every count passes through a **saturating log curve** with a fixed target. Early progress counts a lot, later progress less, and nothing exceeds 100%. Example (stars, target 1,000):
+
+| Stars | 0 | 10 | 100 | 1,000+ |
+|---|---:|---:|---:|---:|
+| Achievement | 0% | 35% | 67% | 100% |
+
+<details>
+<summary><b>Project quality (30%)</b>: the five best repositories, weighted 35 / 25 / 18 / 12 / 10%</summary>
+
+Up to 24 owned repositories and 8 team repositories are inspected in depth. Each scores out of 100:
+
+| Group | Points | Signals |
+|---|---:|---|
+| Documentation | 26 | README size (14, square-root curve to 4 KB), description (4), topics (2), homepage (3), docs folder or site generator (3) |
+| Engineering hygiene | 30 | Test suite (10), CI configuration (9), licence (7), published releases (4) |
+| Sustained development | 20 | Commits the person authored (14, log curve to 200), pushed within six months (6) |
+| Adoption | 24 | Stars (18, log curve to 1,000), forks (6, log curve to 150) |
+
+Each repository's score is then multiplied by an **authorship factor**, `min(1, 0.4 + 1.2 × share)`, where *share* is the fraction of default-branch commits the person wrote. Writing half or more earns full credit; writing a quarter earns 70%. Forks and the profile-README repository are excluded.
+</details>
+
+<details>
+<summary><b>Build depth (25%)</b>: how much of their projects the person personally wrote</summary>
+
+| Factor | Share | Measure |
+|---|---:|---|
+| Authored volume | 30% | Commits written across credited projects; log curve to 1,500 |
+| Lead-built projects | 30% | Projects where they wrote ≥ 50% of commits, with 40+ commits; full at 5 |
+| Sustained involvement | 25% | Distinct weeks with commits on their two longest-running projects (up to 500 commits read on the three busiest); full at 26 weeks |
+| Authorship share | 15% | Portfolio-weighted share of their top five projects that is their own code |
+</details>
+
+<details>
+<summary><b>Open-source contribution (10%)</b>: peer-reviewed work counts most</summary>
+
+| Factor | Share | Measure |
+|---|---:|---|
+| Peer-reviewed PRs | 40% | Merged by an outside maintainer. Each is weighted by project stature (0.4 → 1.0 at 2,000★) × size of change (0.35 → 1.0 at 150 lines); log curve to 40 |
+| Team & self-merged PRs | 15% | PRs in organisation or teammates' repositories, weighted by size; log curve to 60 |
+| Repository reach | 15% | Distinct outside repositories that accepted their work; log curve to 15 |
+| Project stature | 10% | Stars of the most prominent repository they landed a PR in; log curve to 20,000 |
+| Acceptance rate | 10% | Outside merged ÷ decided, smoothed and discounted below ten PRs |
+| Issues & reviews | 10% | In outside projects only; log curve to 60 |
+</details>
+
+<details>
+<summary><b>Activity (15%), impact (12%), breadth (8%)</b></summary>
+
+**Activity & consistency** (last 12 months): active days (35%, full at 220), weeks with activity (30%, out of 52), contribution volume (20%, log curve to 1,500), recency (15%, full within 14 days, zero at 180).
+
+**Impact & reach:** stars earned (55%, log curve to 5,000), forks (20%, log curve to 500), repositories with 10+ stars (20%, log curve to 10), followers (**5%**, log curve to 1,000; deliberately minor).
+
+**Engineering breadth:** distinct languages (40%, full at 8), repositories scoring 45+ on quality (35%, full at 8), repositories contributed to this year (25%, full at 25).
+</details>
+
+The full specification also lives in the app at **`/method`**.
+
+---
+
+## What counts as whose work
+
+Every merged pull request in a repository the person doesn't own is classified using GitHub's own author association and who merged it:
+
+| Class | Rule | Where it's credited |
 |---|---|---|
-| Project quality | 30% | The 5 best of up to 24 owned repos plus up to 8 team/organisation repos (35/25/18/12/10), each scaled by authorship share: README, docs, tests, CI, licence, releases, authored commits, maintenance, stars, forks |
-| Build depth | 20% | How much of their projects the person wrote: authored commits, projects they led (≥50% authorship, 40+ commits), weeks of sustained involvement on their main projects, authorship share of their top five |
-| Open-source contribution | 15% | Peer-reviewed PRs only: the author isn't a member or collaborator, and someone else merged it. Weighted by project stature and change size; distinct repos, most prominent project, acceptance rate, issues and reviews |
-| Activity & consistency | 15% | Active days, active weeks, volume and recency over the last 12 months |
-| Impact & reach | 12% | Stars earned, forks, repos with 10+ stars; followers only 5% of this section |
-| Engineering breadth | 8% | Languages, number of substantial projects, repos contributed to this year |
+| **Outside** | Author is not an owner, member or collaborator, and someone else merged it | Open source, in full |
+| **Team** | Author is a member or collaborator there, or merged their own PR | Smaller open-source factor; the repository counts under project quality and build depth, scaled by authorship |
+| **Farm** | Repository exists to collect easy PRs (Hacktoberfest, first-contributions, contribution walls, question dumps) | 15% of an outside PR |
 
-Each profile also splits the last 12 months' commits and PRs into **own & team work** and **outside contribution**, and every merged PR elsewhere is labelled Outside, Team or Farm. The profile is labelled **Builder-led**, **Balanced** or **Contributor-led**. The full specification is on the `/method` page.
+The same rule applies to issues and reviews: activity inside the person's own organisations doesn't count as outside engagement.
 
-### Teams
+Each profile also splits the last 12 months into **own & team work** vs **outside contribution** and labels the person:
 
-- One member: 100% that member.
-- **Lead-weighted** (default): the lead carries 1.2× an equal share, and the others split the rest. That gives 60/40 for two members, 40/30/30 for three and 30/23.3/23.3/23.3 for four.
-- **Equal average**: every member carries 1/n.
-- Members can be added whenever they're ready, either on the team page or by creating a team with the same name again. Adding someone only re-weights the team; it never changes anyone's own score.
+- **Builder-led:** at most 25% outside.
+- **Contributor-led:** 60% or more outside.
+- **Balanced:** anything in between.
 
-## Running it
+The split describes how someone works; it doesn't add or remove points by itself.
 
-Requires **Node 22.13+**, because storage uses the built-in `node:sqlite` with no native dependencies.
+---
+
+## Teams
+
+A team's score is the weighted mean of its members' **finished, independent** scores.
+
+| Members | Lead-weighted (default) | Equal average |
+|---:|---|---|
+| 1 | 100% | 100% |
+| 2 | 60 / 40 | 50 / 50 |
+| 3 | 40 / 30 / 30 | 33.3 each |
+| 4 | 30 / 23.3 / 23.3 / 23.3 | 25 each |
+| 5 | 24 / 19 × 4 | 20 each |
+
+The lead carries 1.2× an equal share (`1.2 / n`). Without a designated lead, a team uses the equal average. Members can be added at any time, from the team page or by creating a team with the same name again. Adding a member re-weights the team and never changes anyone's own score.
+
+---
+
+## Fairness guarantees
+
+- **One person, one context.** An assessment reads a single account's data. No other participant is consulted, compared or used for normalisation.
+- **Absolute thresholds.** Adding, removing or re-analysing anyone never moves another person's score; rankings are a plain sort.
+- **Deterministic.** The same evidence always produces the same score. The scoring functions are pure and unit-tested.
+- **Traceable.** Every profile shows the evidence behind each factor and notes anything that couldn't be measured, such as private contributions or very large histories.
+- **Versioned.** Each assessment records its methodology version (currently `2026.11-r5`). Changing the rules bumps the version, and older snapshots are re-crawled the next time they're requested.
+
+---
+
+## Quick start
+
+Requires **Node.js 22.13+**. Storage uses the built-in `node:sqlite`, so there are no native dependencies.
 
 ```bash
+git clone https://github.com/kartikeyajay2006/github-ranking.git
+cd github-ranking
 npm install
-cp .env.example .env      # set GITHUB_TOKEN, or rely on `gh auth login`
-npm run dev               # http://localhost:3000
+cp .env.example .env    # add GITHUB_TOKEN, or skip if you're signed in with `gh`
+npm run dev             # http://localhost:3000
 ```
 
 Production:
@@ -49,43 +193,102 @@ npm run build
 npm start
 ```
 
-### Configuration
+## Configuration
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `GITHUB_TOKEN` | `gh auth token` | GitHub token for API reads. A fine-grained token with no extra permissions is enough, since only public data is read. |
-| `DATABASE_PATH` | `data/ranking.db` | SQLite file holding analyses, standings and teams. |
-| `ANALYSIS_TTL_HOURS` | `12` | How long a stored analysis is reused before a fresh crawl. |
+| `GITHUB_TOKEN` | output of `gh auth token` | Token for GitHub's GraphQL API. Only public data is read, so a fine-grained token with no extra permissions is enough. |
+| `DATABASE_PATH` | `data/ranking.db` | SQLite file holding analyses, standings and teams |
+| `ANALYSIS_TTL_HOURS` | `12` | How long a stored analysis is reused before a fresh crawl |
 
-The database must live on persistent disk. Serverless hosts with ephemeral file systems will lose it, so use a VM, a container with a volume, or any Node host with a disk.
+---
 
-### Scripts
+## Deployment
 
-| Command | What it does |
+The app keeps state in a SQLite file, so it needs **persistent disk**. A VM, a container with a volume, or any long-running Node host works.
+
+> **Serverless platforms such as Vercel are not supported as-is.** Their file systems are ephemeral, so the database would be lost. Running there needs a hosted database (for example Postgres) behind `src/lib/store.ts`.
+
+Anyone who can reach the app can add, remove and edit entries. Put it behind your own access control (VPN, reverse-proxy auth) before exposing it publicly.
+
+---
+
+## Capacity
+
+Measured against GitHub's GraphQL API:
+
+| | Measured |
 |---|---|
-| `npm test` | Unit tests for scoring, team weights, parsing and signal detection (no network) |
-| `npm run typecheck` | TypeScript |
-| `CALIBRATE=user1,user2 npm run calibrate` | Live run against real accounts; writes scores to `calibration.txt` |
+| Time to analyse | ~8 s for a typical account; up to ~35 s for very prolific ones |
+| API cost | ~11 points per account on average |
 
-## How it works
+- **Rate limit:** GitHub allows 5,000 points per hour per token, roughly **400 typical accounts per hour**. GitHub's terms don't allow pooling several accounts' tokens to get around this.
+- **Concurrency:** requests go through a gate of 4 in flight, secondary rate limits are retried with back-off, and very large repositories are isolated so they can't stall a batch.
+- **Storage:** about 50–80 KB per analysed person.
+
+---
+
+## Architecture
+
+```mermaid
+flowchart LR
+  A[Username] --> B[collect.ts<br/>one account only]
+  B --> C[(GitHub GraphQL)]
+  B --> D[ProfileEvidence]
+  D --> E[individual.ts<br/>pure scoring]
+  E --> F[Assessment<br/>ledger + notes]
+  F --> G[(SQLite)]
+  G --> H[team.ts<br/>weights finished scores]
+  G --> I[Next.js pages]
+  H --> I
+```
 
 ```
 src/
-  lib/github/client.ts     GraphQL client: token resolution, request gate (4 in flight), secondary-limit back-off, timeouts
-  lib/github/collect.ts    Evidence for ONE login: profile, 12-month contributions, repo scan, deep repo inspection, external PR search
-  lib/scoring/individual.ts  Pure, deterministic scoring from that evidence
-  lib/scoring/team.ts      Team weights and weighted aggregation of finished member scores
-  lib/analyze.ts           Collect → score → store, with freshness cache and in-flight de-duplication
-  lib/store.ts, db.ts      SQLite persistence (profiles, individuals, teams, members)
-  app/                     Next.js App Router pages and server actions
+├─ lib/
+│  ├─ github/client.ts       GraphQL client: token resolution, request gate, back-off, timeouts
+│  ├─ github/collect.ts      Evidence for ONE login: profile, contributions, repository scan,
+│  │                         deep inspection, team-repo discovery, PR/issue classification inputs
+│  ├─ scoring/curves.ts      Saturating curves and helpers
+│  ├─ scoring/individual.ts  Pure, deterministic scoring and the score ledger
+│  ├─ scoring/team.ts        Team weights and weighted aggregation
+│  ├─ analyze.ts             Collect → score → store, with freshness cache and de-duplication
+│  └─ store.ts, db.ts        SQLite persistence
+├─ app/                      Next.js App Router pages and server actions
+└─ components/               UI: standings, ledger, heatmap, forms, theme toggle
 ```
 
-A typical account takes 5–10 seconds to analyse. Very large repositories are inspected in batches of their own. When counting a repository's full commit history times out, that owner's last-12-month commits to it are used instead, and the profile notes the substitution.
+**Stack:** Next.js 16 (App Router, server actions), React 19, TypeScript, `node:sqlite`, Vitest. No UI framework or chart library; the visual system is a single stylesheet with light and dark themes and a colour-blind-safe palette.
 
-## Known limits
+---
 
-- Only public data is inspected. Private contributions show in the activity calendar when the user has enabled that, but their content can't be examined.
-- Team repositories are discovered through merged PRs and last-12-month commits. An old organisation project with no recent activity isn't picked up.
-- Contribution farms are recognised by repository name.
-- Tests are detected at the repository root and in `src/test`. Tests nested deeper in a monorepo can be missed.
-- Commits made from an e-mail address that isn't linked to the account don't attribute to it. On repositories the person owns, half of the history is credited instead.
+## Development
+
+| Command | What it does |
+|---|---|
+| `npm run dev` | Development server |
+| `npm test` | Unit tests for scoring, classification, authorship, team weights and parsing (no network) |
+| `npm run typecheck` | TypeScript |
+| `CALIBRATE=user1,user2 npm run calibrate` | Live run against real accounts; writes scores to `calibration.txt` |
+
+When changing weights or rules, edit `src/lib/scoring/individual.ts`, bump `METHODOLOGY_VERSION`, update `/method`, and calibrate against a spread of real accounts (new, student, established, prolific) before shipping.
+
+---
+
+## Limitations
+
+- **Public data only.** Private contributions appear in the activity calendar when the user has enabled it, but can't be inspected.
+- **Team repositories** are found through merged PRs and the last 12 months of commits. An old organisation project with no recent activity isn't picked up.
+- **Contribution farms** are recognised by repository name.
+- **Tests** are detected at the repository root and in `src/test`. Tests nested deeper in a monorepo can be missed.
+- **Commits from an e-mail not linked to the account** don't attribute to it. On repositories the person owns, half of the history is credited and the profile says so.
+- **Very large histories:** the 200 most recent merged PRs are classified and the rest are assumed to follow the same mix. Commit dates are read up to 500 per project.
+- **One account per person.** Work split across two GitHub accounts is assessed separately.
+
+## Roadmap
+
+- Bulk import of teams from CSV, with a resumable background queue for thousands of applicants
+- A pinned evaluation cut-off date so long batch runs measure everyone over the same window
+- Postgres storage adapter for serverless hosting
+- Admin authentication
+- CSV export of standings and selection lists
