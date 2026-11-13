@@ -4,8 +4,7 @@ import { connection } from "next/server";
 import { createOrExtendTeam } from "../actions";
 import { CreateTeam } from "@/components/forms";
 import { Avatar, Band, Strip, StripLegend, fmt, relative } from "@/components/ui";
-import { scoreTeam } from "@/lib/teamscore";
-import { getSummaries, jobNames, listTeams } from "@/lib/store";
+import { teamStandings } from "@/lib/standings";
 
 const PAGE_SIZE = 100;
 
@@ -13,18 +12,8 @@ export const metadata: Metadata = { title: "Teams" };
 
 export default async function TeamsPage({ searchParams }: { searchParams: Promise<{ page?: string }> }) {
   await connection();
-  const teams = listTeams();
-  const profiles = getSummaries([...new Set(teams.flatMap((t) => t.members.map((m) => m.login)))]);
-  const imports = jobNames();
-
-  const rows = teams
-    .map((team) => {
-      const members = team.members.map((m) => ({ login: m.login, profile: profiles.get(m.login.toLowerCase()) ?? null }));
-      const result = scoreTeam(team, profiles);
-      const updated = Math.max(0, ...members.map((m) => m.profile?.analyzedAt ?? 0));
-      return { team, members, result, updated };
-    })
-    .sort((a, b) => (b.result?.total ?? -1) - (a.result?.total ?? -1) || a.team.name.localeCompare(b.team.name));
+  const { rows, firstAt, imports } = teamStandings();
+  const teams = rows.map((r) => r.team);
   const pages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
   const page = Math.min(pages, Math.max(1, Number((await searchParams).page) || 1));
   const shown = rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -85,7 +74,7 @@ export default async function TeamsPage({ searchParams }: { searchParams: Promis
             </thead>
             <tbody>
               {shown.map(({ team, members, result, updated }, i) => {
-                const rank = result ? rows.findIndex((r) => r.result?.total === result.total) + 1 : null;
+                const rank = result ? (firstAt.get(result.total) ?? null) : null;
                 const lead = team.leader ? members.find((m) => m.login.toLowerCase() === team.leader!.toLowerCase()) : null;
                 const absentLead = team.leader ? team.absent.find((a) => a.label.toLowerCase() === team.leader!.toLowerCase()) : null;
                 const size = members.length + team.absent.length;

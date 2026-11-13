@@ -1,21 +1,34 @@
 import "server-only";
 import { randomBytes } from "node:crypto";
+import { brotliCompressSync, brotliDecompressSync, constants } from "node:zlib";
 import { db, transaction } from "./db";
 import type { AbsentMember, Assessment, ProfileEvidence, ProfileSummary, StoredProfile, Team, WeightingMode } from "./types";
 
 interface ProfileRow {
   login: string;
-  evidence: string;
-  assessment: string;
+  evidence: string | Uint8Array;
+  assessment: string | Uint8Array;
   analyzed_at: number;
+}
+
+/**
+ * Evidence and assessments are stored Brotli-compressed (about 7× smaller), which keeps a database of
+ * tens of thousands of people, and its snapshots, compact. Rows written as plain JSON still read fine.
+ */
+const pack = (value: unknown) => brotliCompressSync(Buffer.from(JSON.stringify(value)), { params: { [constants.BROTLI_PARAM_QUALITY]: 5 } });
+function unpack<T>(stored: string | Uint8Array): T {
+  return JSON.parse(typeof stored === "string" ? stored : brotliDecompressSync(stored).toString("utf8")) as T;
 }
 
 const toProfile = (row: ProfileRow): StoredProfile => ({
   login: row.login,
-  evidence: JSON.parse(row.evidence) as ProfileEvidence,
-  assessment: JSON.parse(row.assessment) as Assessment,
+  evidence: unpack<ProfileEvidence>(row.evidence),
+  assessment: unpack<Assessment>(row.assessment),
   analyzedAt: row.analyzed_at,
 });
+
+/** Rows changed through this connection since it opened: any write moves it, so it keys in-memory caches. */
+export const dataVersion = () => (db().prepare("SELECT total_changes() AS n").get() as { n: number }).n;
 
 /* -------------------------------------------------------------- profiles -------------------------------------------------------------- */
 
@@ -59,8 +72,8 @@ export function saveProfile(evidence: ProfileEvidence, assessment: Assessment, a
     )
     .run(
       evidence.login,
-      JSON.stringify(evidence),
-      JSON.stringify(assessment),
+      pack(evidence),
+      pack(assessment),
       assessment.total,
       assessment.methodology,
       analyzedAt,
@@ -141,11 +154,23 @@ interface TeamRow {
   absent: string | null;
 }
 
-function hydrate(rows: TeamRow[]): Team[] {
+function hydrate(rows: TeamRow[], all = false): Team[] {
   if (!rows.length) return [];
-  const members = db()
-    .prepare(`SELECT team_id, login, added_at FROM team_members WHERE team_id IN (${rows.map(() => "?").join(",")}) ORDER BY added_at, rowid`)
-    .all(...rows.map((r) => r.id)) as unknown as { team_id: string; login: string; added_at: number }[];
+  type M = { team_id: string; login: string; added_at: number };
+  // For the full list, one scan of team_members beats thousands of placeholders.
+  const members = (
+    all
+      ? db().prepare("SELECT team_id, login, added_at FROM team_members ORDER BY added_at, rowid").all()
+      : db()
+          .prepare(`SELECT team_id, login, added_at FROM team_members WHERE team_id IN (${rows.map(() => "?").join(",")}) ORDER BY added_at, rowid`)
+          .all(...rows.map((r) => r.id))
+  ) as unknown as M[];
+  const byTeam = new Map<string, M[]>();
+  for (const m of members) {
+    const list = byTeam.get(m.team_id);
+    if (list) list.push(m);
+    else byTeam.set(m.team_id, [m]);
+  }
   return rows.map((r) => ({
     id: r.id,
     name: r.name,
@@ -154,12 +179,12 @@ function hydrate(rows: TeamRow[]): Team[] {
     createdAt: r.created_at,
     jobId: r.job_id,
     absent: r.absent ? (JSON.parse(r.absent) as AbsentMember[]) : [],
-    members: members.filter((m) => m.team_id === r.id).map((m) => ({ login: m.login, addedAt: m.added_at })),
+    members: (byTeam.get(r.id) ?? []).map((m) => ({ login: m.login, addedAt: m.added_at })),
   }));
 }
 
 export function listTeams(): Team[] {
-  return hydrate(db().prepare("SELECT * FROM teams ORDER BY created_at").all() as unknown as TeamRow[]);
+  return hydrate(db().prepare("SELECT * FROM teams ORDER BY created_at").all() as unknown as TeamRow[], true);
 }
 
 export function getTeam(id: string): Team | null {

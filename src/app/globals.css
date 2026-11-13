@@ -2039,3 +2039,11 @@ tr:nth-child(-n + 3) .rank {
     flex-wrap: wrap;
   }
 }
+
+/* Large rankings: no per-cell entrance animation (thousands of animated cells make rendering slow). */
+.import-table tbody td {
+  animation: none;
+}
+.import-table tbody tr.fresh td {
+  animation: flash-row 2.2s var(--ease);
+}

@@ -9,7 +9,7 @@ import { DatabaseSync } from "node:sqlite";
  * - consistent snapshots with `VACUUM INTO` (safe while the app is writing), every hour when the data
  *   changed, at start-up, and before anything destructive;
  * - every snapshot is integrity-checked before it is kept;
- * - rotation keeps the last 48 snapshots plus one per day for 30 days;
+ * - rotation keeps the last 24 snapshots plus one per day for 14 days (BACKUP_KEEP, BACKUP_KEEP_DAYS);
  * - an optional BACKUP_COMMAND copies each snapshot off the machine (e.g. `aws s3 cp "$1" s3://…/`);
  * - on start-up a corrupt database is moved aside and the newest healthy snapshot restored.
  */
@@ -17,8 +17,8 @@ import { DatabaseSync } from "node:sqlite";
 export const databaseFile = () => resolve(/*turbopackIgnore: true*/ process.env.DATABASE_PATH || "data/ranking.db");
 export const backupDir = () => resolve(/*turbopackIgnore: true*/ process.env.BACKUP_DIR || join(dirname(databaseFile()), "backups"));
 
-const KEEP_RECENT = 48;
-const KEEP_DAILY_DAYS = 30;
+const KEEP_RECENT = Math.max(1, Number(process.env.BACKUP_KEEP ?? 24));
+const KEEP_DAILY_DAYS = Math.max(0, Number(process.env.BACKUP_KEEP_DAYS ?? 14));
 const PREFIX = "ranking-";
 
 const stamp = (d = new Date()) => d.toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "Z").replace("T", "-");

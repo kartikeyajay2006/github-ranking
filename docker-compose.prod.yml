@@ -1,0 +1,38 @@
+# Production: the app behind Caddy (automatic HTTPS).
+#   SITE_ADDRESS=ranking.example.com docker compose -f docker-compose.prod.yml up -d --build
+# Data (database + snapshots) lives in ./data on the host.
+services:
+  app:
+    build: .
+    image: github-ranking:latest
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_PATH: /data/ranking.db
+      BACKUP_DIR: /data/backups
+    volumes:
+      - ./data:/data
+    expose:
+      - "3000"
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+
+  caddy:
+    image: caddy:2.8.4-alpine
+    restart: unless-stopped
+    depends_on: [app]
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

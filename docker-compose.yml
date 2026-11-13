@@ -1,0 +1,19 @@
+# docker compose up -d --build
+# Data (database + snapshots) lives in ./data on the host and survives rebuilds.
+services:
+  app:
+    build: .
+    image: github-ranking:latest
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_PATH: /data/ranking.db
+      BACKUP_DIR: /data/backups
+    volumes:
+      - ./data:/data
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }

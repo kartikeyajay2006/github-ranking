@@ -230,7 +230,8 @@ All data lives in one SQLite file (`DATABASE_PATH`). It is protected in layers:
 | Durable writes | WAL journal with `synchronous=FULL`: a committed write survives a crash or power loss |
 | Snapshots | `VACUUM INTO` snapshots, consistent even while imports are writing: at start-up, every hour while data is changing, before schema migrations and before an import is deleted |
 | Verification | Every snapshot passes an integrity check before it is kept; a failing one is discarded and logged |
-| Rotation | The last 48 snapshots plus one per day for 30 days (`BACKUP_DIR`, default `data/backups`) |
+| Rotation | The last 24 snapshots plus one per day for 14 days (`BACKUP_KEEP`, `BACKUP_KEEP_DAYS`; folder `BACKUP_DIR`, default `data/backups`) |
+| Compact storage | Evidence is stored Brotli-compressed, about 7× smaller, so 15,000 people take roughly 100–300 MB |
 | Off-machine copies | Optional `BACKUP_COMMAND` runs after each snapshot with its path as `$1`, e.g. `aws s3 cp "$1" s3://my-bucket/ranking/` |
 | Self-repair | On start-up, a database that fails its integrity check is moved aside and the newest healthy snapshot is restored automatically |
 | Clean shutdown | The write-ahead log is folded into the main file on exit, so the `.db` file alone is always a complete copy |
@@ -248,28 +249,59 @@ npm run db -- restore <file>   # stop the app first; the current database is sna
 
 ## Deployment
 
-The app keeps state in a SQLite file, so it needs **persistent disk**. A VM, a container with a volume, or any long-running Node host works.
+The app keeps its state in a SQLite file, so it needs **persistent disk**: a VM, or a container with a volume. Serverless platforms such as Vercel are not supported as-is, because their file systems are ephemeral.
 
-> **Serverless platforms such as Vercel are not supported as-is.** Their file systems are ephemeral, so the database would be lost. Running there needs a hosted database (for example Postgres) behind `src/lib/store.ts`.
+**Always set `ADMIN_PASSWORD` on a public deployment.** Without it, anyone who can reach the app can add, remove and edit entries.
 
-Set `ADMIN_PASSWORD` before exposing the app publicly: without it, anyone who can reach the app can add, remove and edit entries.
+### Docker (any server)
 
----
+```bash
+cp .env.example .env              # GITHUB_TOKEN, ADMIN_PASSWORD, …
+docker compose up -d --build      # http://<server>:3000, data in ./data
+```
+
+With automatic HTTPS for a domain pointed at the server:
+
+```bash
+SITE_ADDRESS=ranking.example.com docker compose -f docker-compose.prod.yml up -d --build
+```
+
+The image is a Next.js standalone server on Node 24 (~45 MB of app files). It runs as a non-root user, has a health check on `/api/health`, and checkpoints the database cleanly on shutdown.
+
+### AWS (one command)
+
+```bash
+aws login --profile neyvro
+GITHUB_TOKEN=<token> deploy/aws/deploy.sh      # first deploy, ~5 minutes
+deploy/aws/update.sh                            # later: pull main, snapshot, rebuild, restart
+```
+
+`deploy.sh` is safe to re-run. In `ap-south-1` it creates:
+
+- one **t4g.small** Graviton instance (Amazon Linux 2023), managed through SSM, with no SSH port open;
+- a **30 GB encrypted disk that is kept even if the instance is terminated**;
+- a fixed Elastic IP and an HTTPS address `https://<ip>.sslip.io`, with a Let's Encrypt certificate via Caddy;
+- a private, **versioned, encrypted S3 bucket**: snapshots are synced to it every 15 minutes, and a rebuilt server restores the newest one automatically;
+- SSM SecureString parameters for `GITHUB_TOKEN` and a generated `ADMIN_PASSWORD`, which the script prints at the end.
+
+Cost is roughly **$15/month**.
 
 ## Capacity
 
-Measured against GitHub's GraphQL API:
+Measured against GitHub's GraphQL API and against a database of **5,000 teams / 15,000 people**, using the production server bundle:
 
 | | Measured |
 |---|---|
-| Time to analyse | ~8 s for a typical account; up to ~35 s for very prolific ones |
-| API cost | ~11 points per account on average |
+| Analysis time | ~7–8 s for a typical student account; up to ~35 s for very prolific ones |
+| API cost | **~5 points** per typical account (down from 11–25 before query batching) |
+| Throughput | GitHub allows 5,000 points/hour per token: **~800–1,000 people per hour**, so 5,000 teams of 3 take roughly a working day. The queue waits out the limit on its own |
+| Storage | Evidence is compressed: ~20 KB per person, so 15,000 people take under 400 MB |
+| Teams list (5,000 teams) | 70 ms per request; standings are cached until data changes |
+| Live ranking (5,000 teams) | 130 ms page; each 3-second poll downloads only newly finished teams (~0.5 KB) |
+| Search across 5,000 teams | ~130 ms in the browser |
+| Load test | 1,112 requests across every page: **0 errors**; one user: every page under 150 ms; five concurrent users: 95% of requests under 0.6 s |
 
-- **Rate limit:** GitHub allows 5,000 points per hour per token, roughly **400 typical accounts per hour**. GitHub's terms don't allow pooling several accounts' tokens to get around this.
-- **Concurrency:** requests go through a gate of 4 in flight, secondary rate limits are retried with back-off, and very large repositories are isolated so they can't stall a batch.
-- **Storage:** about 50–80 KB per analysed person.
-
----
+GitHub's terms don't allow pooling several accounts' tokens to get around the hourly limit.
 
 ## Architecture
 
@@ -296,7 +328,10 @@ src/
 │  ├─ scoring/individual.ts  Pure, deterministic scoring and the score ledger
 │  ├─ scoring/team.ts        Team weights and weighted aggregation
 │  ├─ analyze.ts             Collect → score → store, with freshness cache and de-duplication
-│  └─ store.ts, db.ts        SQLite persistence
+│  ├─ imports/               Upload: readers (PDF, Word, Excel, CSV, links), extraction, AI extraction, job queue, worker
+│  ├─ backup.ts              Verified snapshots, rotation, self-repair
+│  ├─ standings.ts           Cached team standings
+│  └─ store.ts, db.ts        SQLite persistence (compressed evidence, summaries, migrations)
 ├─ app/                      Next.js App Router pages and server actions
 └─ components/               UI: standings, ledger, heatmap, forms, theme toggle
 ```
@@ -330,8 +365,6 @@ When changing weights or rules, edit `src/lib/scoring/individual.ts`, bump `METH
 
 ## Roadmap
 
-- Bulk import of teams from CSV, with a resumable background queue for thousands of applicants
-- A pinned evaluation cut-off date so long batch runs measure everyone over the same window
-- Postgres storage adapter for serverless hosting
-- Admin authentication
-- CSV export of standings and selection lists
+- A pinned evaluation cut-off date, so long batch runs measure everyone over the same 12-month window
+- A Postgres storage adapter for serverless hosting
+- Per-organiser accounts instead of one shared admin password

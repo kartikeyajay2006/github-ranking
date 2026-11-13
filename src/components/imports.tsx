@@ -172,6 +172,8 @@ interface Progress {
 }
 
 const STATUS_LABEL = { draft: "Draft", running: "Ranking", paused: "Paused", done: "Complete" } as const;
+/** Rows rendered at a time; search and the cut-off still cover every team. */
+const PAGE = 300;
 
 function duration(ms: number) {
   const m = Math.round(ms / 60_000);
@@ -183,6 +185,7 @@ function duration(ms: number) {
 
 export function LiveImport({ id, initial }: { id: string; initial: Progress }) {
   const [data, setData] = useState<Progress>(initial);
+  const [visible, setVisible] = useState(PAGE);
   const [pending, start] = useTransition();
   const [query, setQuery] = useState("");
   const [cutoff, setCutoffInput] = useState(initial.job.cutoff ? String(initial.job.cutoff) : "");
@@ -190,17 +193,26 @@ export function LiveImport({ id, initial }: { id: string; initial: Progress }) {
   const known = useRef(new Set(initial.ranked.map((r) => r.idx)));
   const router = useRouter();
 
+  const since = useRef(Math.max(0, ...initial.ranked.map((r) => r.finishedAt ?? 0)));
   const refresh = async () => {
-    const res = await fetch(`/api/imports/${id}`, { cache: "no-store" });
+    const res = await fetch(`/api/imports/${id}?since=${since.current}`, { cache: "no-store" });
     if (!res.ok) return;
-    const next = (await res.json()) as Progress;
+    const next = (await res.json()) as Progress & { full?: boolean };
     const added = next.ranked.filter((r) => !known.current.has(r.idx)).map((r) => r.idx);
     added.forEach((i) => known.current.add(i));
     if (added.length) {
       setFresh(new Set(added));
       setTimeout(() => setFresh(new Set()), 2400);
     }
-    setData(next);
+    since.current = Math.max(since.current, ...next.ranked.map((r) => r.finishedAt ?? 0));
+    setData((prev) => {
+      if (next.full) return next;
+      // Merge the newly finished teams into the ranking (same order as the server: score, then file order).
+      const byIdx = new Map(prev.ranked.map((r) => [r.idx, r]));
+      for (const r of next.ranked) byIdx.set(r.idx, r);
+      const ranked = [...byIdx.values()].sort((a, b) => (b.score ?? 0) - (a.score ?? 0) || a.idx - b.idx);
+      return { ...next, ranked };
+    });
   };
 
   useEffect(() => {
@@ -344,7 +356,7 @@ export function LiveImport({ id, initial }: { id: string; initial: Progress }) {
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
+              {rows.slice(0, visible).map((r) => (
                 <Fragment key={r.idx}>
                   <tr className={`${cut && r.rank <= cut && r.eligible ? "selected" : ""}${r.eligible ? "" : " ineligible"}${fresh.has(r.idx) ? " fresh" : ""}`}>
                     <td className="rank">{r.rank}</td>
@@ -402,6 +414,19 @@ export function LiveImport({ id, initial }: { id: string; initial: Progress }) {
               ))}
             </tbody>
           </table>
+        )}
+        {rows.length > visible && (
+          <div className="pager" style={{ justifyContent: "center" }}>
+            <span className="mono muted">
+              Showing {visible.toLocaleString("en-US")} of {rows.length.toLocaleString("en-US")}
+            </span>
+            <button className="btn ghost small" onClick={() => setVisible((v) => v + PAGE)}>
+              Show {Math.min(PAGE, rows.length - visible)} more
+            </button>
+            <button className="btn ghost small" onClick={() => setVisible(rows.length)}>
+              Show all
+            </button>
+          </div>
         )}
       </section>
 

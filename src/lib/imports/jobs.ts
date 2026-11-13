@@ -158,10 +158,12 @@ export function jobTeams(id: string, status?: ImportTeam["status"]): ImportTeam[
   return (rows as unknown as TeamRowDb[]).map(toTeam);
 }
 
-/** Completed teams, best first. */
-export function rankedTeams(id: string): ImportTeam[] {
+/** Completed teams, best first; with `since`, only those finished after that time (for incremental polling). */
+export function rankedTeams(id: string, since = 0): ImportTeam[] {
   return (
-    db().prepare("SELECT * FROM import_teams WHERE job_id = ? AND status = 'done' ORDER BY score DESC, idx ASC").all(id) as unknown as TeamRowDb[]
+    db()
+      .prepare("SELECT * FROM import_teams WHERE job_id = ? AND status = 'done' AND COALESCE(finished_at, 0) > ? ORDER BY score DESC, idx ASC")
+      .all(id, since) as unknown as TeamRowDb[]
   ).map(toTeam);
 }
 
