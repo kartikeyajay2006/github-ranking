@@ -1,0 +1,31 @@
+{
+  "name": "github-ranking",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Absolute, per-person assessment and ranking of GitHub engineers and teams.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --exclude \"tests/**/*.live.test.ts\"",
+    "calibrate": "vitest run tests/calibrate.live.test.ts"
+  },
+  "dependencies": {
+    "next": "16.4.6",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "server-only": "^0.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.6",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "typescript": "5.9.3",
+    "vitest": "5.1.0"
+  }
+}

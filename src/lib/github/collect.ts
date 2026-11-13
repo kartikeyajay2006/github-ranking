@@ -1,0 +1,480 @@
+import "server-only";
+import { GitHubError, graphql } from "./client";
+import type { ContributionDay, ExternalPullRequest, ProfileEvidence, RepoEvidence, RepoSummary } from "../types";
+
+const LOGIN_RE = /^[a-z\d](?:[a-z\d]|-(?=[a-z\d])){0,38}$/i;
+const REPO_SCAN_PAGES = 10; // 1,000 owned repositories
+const INSPECT_LIMIT = 24;
+const INSPECT_BATCH = 8;
+
+export function normaliseLogin(input: string): string | null {
+  let value = input.trim();
+  const url = value.match(/github\.com\/([^/?#\s]+)/i);
+  if (url?.[1]) value = url[1];
+  value = value.replace(/^@/, "");
+  return LOGIN_RE.test(value) ? value : null;
+}
+
+/* ------------------------------------------------------------------ core ------------------------------------------------------------------ */
+
+const CORE = /* GraphQL */ `
+  query Core($login: String!, $from: DateTime!, $to: DateTime!) {
+    rateLimit { remaining limit resetAt }
+    user(login: $login) {
+      id login name avatarUrl(size: 160) bio company location websiteUrl createdAt
+      followers { totalCount }
+      following { totalCount }
+      forks: repositories(ownerAffiliations: OWNER, isFork: true, privacy: PUBLIC) { totalCount }
+      contributionsCollection(from: $from, to: $to) {
+        restrictedContributionsCount
+        contributionCalendar { totalContributions weeks { contributionDays { date contributionCount } } }
+        commitContributionsByRepository(maxRepositories: 100) { repository { nameWithOwner owner { login } } contributions { totalCount } }
+        pullRequestContributionsByRepository(maxRepositories: 100) { repository { nameWithOwner owner { login } } contributions { totalCount } }
+        pullRequestReviewContributionsByRepository(maxRepositories: 100) { repository { nameWithOwner owner { login } } contributions { totalCount } }
+        issueContributionsByRepository(maxRepositories: 100) { repository { nameWithOwner owner { login } } contributions { totalCount } }
+      }
+    }
+  }
+`;
+
+interface ByRepo {
+  repository: { nameWithOwner: string; owner: { login: string } };
+  contributions: { totalCount: number };
+}
+
+interface CoreData {
+  user: null | {
+    id: string;
+    login: string;
+    name: string | null;
+    avatarUrl: string;
+    bio: string | null;
+    company: string | null;
+    location: string | null;
+    websiteUrl: string | null;
+    createdAt: string;
+    followers: { totalCount: number };
+    following: { totalCount: number };
+    forks: { totalCount: number };
+    contributionsCollection: {
+      restrictedContributionsCount: number;
+      contributionCalendar: { totalContributions: number; weeks: { contributionDays: { date: string; contributionCount: number }[] }[] };
+      commitContributionsByRepository: ByRepo[];
+      pullRequestContributionsByRepository: ByRepo[];
+      pullRequestReviewContributionsByRepository: ByRepo[];
+      issueContributionsByRepository: ByRepo[];
+    };
+  };
+}
+
+/* --------------------------------------------------------------- repo scan --------------------------------------------------------------- */
+
+const SCAN = /* GraphQL */ `
+  query Scan($login: String!, $after: String) {
+    user(login: $login) {
+      repositories(ownerAffiliations: OWNER, isFork: false, privacy: PUBLIC, first: 100, after: $after,
+                   orderBy: { field: STARGAZERS, direction: DESC }) {
+        totalCount
+        pageInfo { hasNextPage endCursor }
+        nodes { nameWithOwner stargazerCount forkCount diskUsage pushedAt isArchived isEmpty description primaryLanguage { name } }
+      }
+    }
+  }
+`;
+
+interface ScanNode {
+  nameWithOwner: string;
+  stargazerCount: number;
+  forkCount: number;
+  diskUsage: number | null;
+  pushedAt: string | null;
+  isArchived: boolean;
+  isEmpty: boolean;
+  description: string | null;
+  primaryLanguage: { name: string } | null;
+}
+
+interface ScanData {
+  user: null | {
+    repositories: { totalCount: number; pageInfo: { hasNextPage: boolean; endCursor: string | null }; nodes: ScanNode[] };
+  };
+}
+
+/* -------------------------------------------------------------- inspection -------------------------------------------------------------- */
+
+const REPO_FRAGMENT = /* GraphQL */ `
+  fragment Inspect on Repository {
+    nameWithOwner url description homepageUrl stargazerCount forkCount isArchived createdAt pushedAt diskUsage
+    licenseInfo { spdxId name }
+    repositoryTopics(first: 1) { totalCount }
+    releases { totalCount }
+    languages(first: 6, orderBy: { field: SIZE, direction: DESC }) { totalSize edges { size node { name color } } }
+    root: object(expression: "HEAD:") { ... on Tree { entries { name type size } } }
+    workflows: object(expression: "HEAD:.github/workflows") { ... on Tree { entries { name } } }
+    srcTest: object(expression: "HEAD:src/test") { ... on Tree { entries { name } } }
+  }
+`;
+
+/** Commit counting is isolated because walking history on very large repositories can time out on GitHub's side. */
+const COMMITS_FRAGMENT = /* GraphQL */ `
+  fragment Commits on Repository {
+    defaultBranchRef { target { ... on Commit { all: history { totalCount } mine: history(author: { id: $authorId }) { totalCount } } } }
+  }
+`;
+
+interface InspectNode {
+  nameWithOwner: string;
+  url: string;
+  description: string | null;
+  homepageUrl: string | null;
+  stargazerCount: number;
+  forkCount: number;
+  isArchived: boolean;
+  createdAt: string;
+  pushedAt: string | null;
+  diskUsage: number | null;
+  licenseInfo: { spdxId: string | null; name: string } | null;
+  repositoryTopics: { totalCount: number };
+  releases: { totalCount: number };
+  languages: { totalSize: number; edges: { size: number; node: { name: string; color: string | null } }[] };
+  root: { entries?: { name: string; type: string; size: number }[] } | null;
+  workflows: { entries?: { name: string }[] } | null;
+  srcTest: { entries?: { name: string }[] } | null;
+}
+
+interface CommitsNode {
+  defaultBranchRef: { target: { all?: { totalCount: number }; mine?: { totalCount: number } } } | null;
+}
+
+const TEST_DIRS = new Set(["test", "tests", "__tests__", "spec", "specs", "e2e", "cypress", "playwright", "testing", "test-suite"]);
+const TEST_FILES = [
+  /^(jest|vitest|karma|playwright|cypress|mocha|ava|jasmine)\.config\./i,
+  /^\.mocharc/i,
+  /^(pytest\.ini|tox\.ini|noxfile\.py|conftest\.py|phpunit\.xml(\.dist)?|\.rspec)$/i,
+  /_test\.go$/i,
+  /\.test\.[cm]?[jt]sx?$/i,
+];
+const CI_ROOT = new Set([".gitlab-ci.yml", ".travis.yml", ".circleci", "azure-pipelines.yml", "jenkinsfile", ".drone.yml", "bitbucket-pipelines.yml", "buildkite"]);
+const DOC_DIRS = new Set(["docs", "doc", "documentation", "website", "book", "guide"]);
+const DOC_FILES = [/^mkdocs\.ya?ml$/i, /^docusaurus\.config\./i, /^book\.toml$/i, /^\.readthedocs\.ya?ml$/i];
+const README_RE = /^readme(\.(md|markdown|mdx|rst|txt|adoc|org))?$/i;
+
+export function readRepo(node: InspectNode): RepoEvidence {
+  const entries = node.root?.entries ?? [];
+  const names = entries.map((e) => e.name.toLowerCase());
+  const readme = entries.find((e) => e.type === "blob" && README_RE.test(e.name));
+  const total = node.languages.totalSize || 0;
+  return {
+    nameWithOwner: node.nameWithOwner,
+    url: node.url,
+    description: node.description?.trim() || null,
+    homepage: node.homepageUrl?.trim() || null,
+    stars: node.stargazerCount,
+    forks: node.forkCount,
+    archived: node.isArchived,
+    createdAt: node.createdAt,
+    pushedAt: node.pushedAt,
+    diskKb: node.diskUsage ?? 0,
+    license: node.licenseInfo && node.licenseInfo.spdxId !== "NOASSERTION" ? node.licenseInfo.spdxId ?? node.licenseInfo.name : node.licenseInfo ? "Custom" : null,
+    topics: node.repositoryTopics.totalCount,
+    releases: node.releases.totalCount,
+    languages: node.languages.edges.map((e) => ({
+      name: e.node.name,
+      color: e.node.color,
+      share: total ? e.size / total : 0,
+    })),
+    readmeBytes: readme?.size ?? 0,
+    hasTests:
+      entries.some((e) => e.type === "tree" && TEST_DIRS.has(e.name.toLowerCase())) ||
+      names.some((n) => TEST_FILES.some((re) => re.test(n))) ||
+      (node.srcTest?.entries?.length ?? 0) > 0,
+    hasCI: (node.workflows?.entries?.length ?? 0) > 0 || names.some((n) => CI_ROOT.has(n)),
+    hasDocs:
+      entries.some((e) => e.type === "tree" && DOC_DIRS.has(e.name.toLowerCase())) ||
+      names.some((n) => DOC_FILES.some((re) => re.test(n))),
+    commitsTotal: 0,
+    commitsByOwner: 0,
+    commitsSource: "history",
+  };
+}
+
+function aliases(names: string[], fragment: string) {
+  return names
+    .map((full, i) => {
+      const [owner, name] = full.split("/");
+      return `r${i}: repository(owner: ${JSON.stringify(owner)}, name: ${JSON.stringify(name)}) { ...${fragment} }`;
+    })
+    .join("\n");
+}
+
+/** Runs an aliased per-repository query; on timeout, halves the batch until single repositories fail on their own. */
+async function perRepo<T>(
+  names: string[],
+  build: (names: string[]) => { query: string; variables?: Record<string, unknown> },
+  timeoutMs: number,
+  onGiveUp: (name: string) => void,
+): Promise<Map<string, T>> {
+  const out = new Map<string, T>();
+  if (!names.length) return out;
+  const { query, variables } = build(names);
+  try {
+    const { data } = await graphql<Record<string, T | null>>(query, variables, { timeoutMs, retries: names.length === 1 ? 1 : 0 });
+    names.forEach((name, i) => {
+      const node = data[`r${i}`];
+      if (node) out.set(name, node);
+    });
+  } catch (err) {
+    if (!(err instanceof GitHubError && err.kind === "upstream")) throw err;
+    if (names.length === 1) {
+      onGiveUp(names[0]!);
+      return out;
+    }
+    const mid = Math.ceil(names.length / 2);
+    const [a, b] = await Promise.all([
+      perRepo<T>(names.slice(0, mid), build, timeoutMs, onGiveUp),
+      perRepo<T>(names.slice(mid), build, timeoutMs, onGiveUp),
+    ]);
+    for (const m of [a, b]) for (const [k, v] of m) out.set(k, v);
+  }
+  return out;
+}
+
+/** Repositories above this size (KB) get a batch of their own so they can't stall smaller ones. */
+const HEAVY_REPO_KB = 400_000;
+
+async function inspectRepos(
+  names: string[],
+  sizes: Map<string, number>,
+  authorId: string,
+  yearCommits: Map<string, number>,
+  notes: string[],
+): Promise<RepoEvidence[]> {
+  const heavy = names.filter((n) => (sizes.get(n) ?? 0) > HEAVY_REPO_KB);
+  const light = names.filter((n) => (sizes.get(n) ?? 0) <= HEAVY_REPO_KB);
+  const batches: string[][] = heavy.map((n) => [n]);
+  for (let i = 0; i < light.length; i += INSPECT_BATCH) batches.push(light.slice(i, i + INSPECT_BATCH));
+
+  const detail = new Map<string, InspectNode>();
+  const commits = new Map<string, CommitsNode>();
+  const commitsUnavailable: string[] = [];
+  await Promise.all(
+    batches.map(async (batch) => {
+      const [d, c] = await Promise.all([
+        perRepo<InspectNode>(batch, (n) => ({ query: `query Inspect {\n${aliases(n, "Inspect")}\n}\n${REPO_FRAGMENT}` }), 20_000, (name) =>
+          notes.push(`${name} could not be inspected (GitHub timed out on it).`),
+        ),
+        perRepo<CommitsNode>(
+          batch,
+          (n) => ({ query: `query Commits($authorId: ID!) {\n${aliases(n, "Commits")}\n}\n${COMMITS_FRAGMENT}`, variables: { authorId } }),
+          8_000,
+          (name) => commitsUnavailable.push(name),
+        ),
+      ]);
+      for (const [k, v] of d) detail.set(k, v);
+      for (const [k, v] of c) commits.set(k, v);
+    }),
+  );
+
+  if (commitsUnavailable.length)
+    notes.push(
+      `Commit history for ${commitsUnavailable.join(", ")} is too large to count; the owner's last-12-month commits there were used instead.`,
+    );
+
+  return names.flatMap((name) => {
+    const node = detail.get(name);
+    if (!node) return [];
+    const repo = readRepo(node);
+    const history = commits.get(name)?.defaultBranchRef?.target;
+    if (history?.all) {
+      repo.commitsTotal = history.all.totalCount;
+      repo.commitsByOwner = history.mine?.totalCount ?? 0;
+    } else {
+      const recent = yearCommits.get(name.toLowerCase()) ?? 0;
+      repo.commitsTotal = recent;
+      repo.commitsByOwner = recent;
+      repo.commitsSource = "last-year";
+    }
+    return [repo];
+  });
+}
+
+/** Ranks scanned repositories by how likely they are to be the account's most representative work. */
+export function inspectionCandidates(login: string, repos: RepoSummary[], limit = INSPECT_LIMIT): string[] {
+  const now = Date.now();
+  const profileRepo = `${login}/${login}`.toLowerCase();
+  return repos
+    .filter((r) => r.diskKb > 0 && r.nameWithOwner.toLowerCase() !== profileRepo)
+    .map((r) => {
+      const ageDays = r.pushedAt ? (now - Date.parse(r.pushedAt)) / 86_400_000 : 9999;
+      const score =
+        2 * Math.log1p(r.stars) +
+        Math.log1p(r.forks) +
+        (r.hasDescription ? 0.5 : 0) +
+        Math.min(1.5, (1.5 * Math.log1p(r.diskKb)) / Math.log1p(20_000)) +
+        (ageDays < 365 ? 1 : 0) -
+        (r.archived ? 0.5 : 0);
+      return { name: r.nameWithOwner, score };
+    })
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map((r) => r.name);
+}
+
+/* --------------------------------------------------------------- external --------------------------------------------------------------- */
+
+const EXTERNAL = /* GraphQL */ `
+  query External($merged: String!, $closed: String!, $open: String!, $issues: String!) {
+    merged: search(query: $merged, type: ISSUE, first: 50) {
+      issueCount
+      nodes { ... on PullRequest { mergedAt repository { nameWithOwner stargazerCount } } }
+    }
+    closed: search(query: $closed, type: ISSUE, first: 1) { issueCount }
+    open: search(query: $open, type: ISSUE, first: 1) { issueCount }
+    issues: search(query: $issues, type: ISSUE, first: 1) { issueCount }
+  }
+`;
+
+interface ExternalData {
+  merged: { issueCount: number; nodes: ({ mergedAt?: string; repository?: { nameWithOwner: string; stargazerCount: number } } | null)[] };
+  closed: { issueCount: number };
+  open: { issueCount: number };
+  issues: { issueCount: number };
+}
+
+async function collectExternal(login: string): Promise<ProfileEvidence["external"]> {
+  // "-user:" excludes every repository owned by the account itself, leaving genuine outside work.
+  const scope = `author:${login} -user:${login}`;
+  const vars = {
+    merged: `is:pr is:merged ${scope}`,
+    closed: `is:pr is:closed is:unmerged ${scope}`,
+    open: `is:pr is:open archived:false ${scope}`,
+    issues: `is:issue ${scope}`,
+  };
+  const { data } = await graphql<ExternalData>(EXTERNAL, vars);
+  const sample: ExternalPullRequest[] = data.merged.nodes
+    .filter((n): n is { mergedAt: string; repository: { nameWithOwner: string; stargazerCount: number } } => !!n?.repository && !!n.mergedAt)
+    .map((n) => ({ repo: n.repository.nameWithOwner, stars: n.repository.stargazerCount, mergedAt: n.mergedAt }));
+  return {
+    merged: data.merged.issueCount,
+    closedUnmerged: data.closed.issueCount,
+    open: data.open.issueCount,
+    issues: data.issues.issueCount,
+    sample,
+  };
+}
+
+/* ---------------------------------------------------------------- collect ---------------------------------------------------------------- */
+
+async function scanRepos(login: string): Promise<{ total: number; repos: RepoSummary[]; truncated: boolean }> {
+  const repos: RepoSummary[] = [];
+  let after: string | null = null;
+  let total = 0;
+  for (let page = 0; page < REPO_SCAN_PAGES; page++) {
+    const res: { data: ScanData } = await graphql<ScanData>(SCAN, { login, after });
+    const conn: NonNullable<ScanData["user"]>["repositories"] | undefined = res.data.user?.repositories;
+    if (!conn) break;
+    total = conn.totalCount;
+    for (const n of conn.nodes) {
+      if (n.isEmpty) continue;
+      repos.push({
+        nameWithOwner: n.nameWithOwner,
+        stars: n.stargazerCount,
+        forks: n.forkCount,
+        language: n.primaryLanguage?.name ?? null,
+        diskKb: n.diskUsage ?? 0,
+        pushedAt: n.pushedAt,
+        hasDescription: !!n.description?.trim(),
+        archived: n.isArchived,
+      });
+    }
+    if (!conn.pageInfo.hasNextPage) return { total, repos, truncated: false };
+    after = conn.pageInfo.endCursor;
+  }
+  return { total, repos, truncated: total > repos.length };
+}
+
+function split(list: ByRepo[], login: string) {
+  let own = 0;
+  let external = 0;
+  for (const item of list) {
+    if (item.repository.owner.login.toLowerCase() === login.toLowerCase()) own += item.contributions.totalCount;
+    else external += item.contributions.totalCount;
+  }
+  return { own, external };
+}
+
+/**
+ * Collects every piece of evidence for one account. The function takes a single login and makes no
+ * reference to any other participant, which is what keeps each assessment independent.
+ */
+export async function collectProfile(rawLogin: string): Promise<{ evidence: ProfileEvidence; notes: string[] }> {
+  const login = normaliseLogin(rawLogin);
+  if (!login) throw new GitHubError(`"${rawLogin}" is not a valid GitHub username.`, "invalid");
+
+  const to = new Date();
+  const from = new Date(to.getTime() - 365 * 86_400_000);
+  const { data: core } = await graphql<CoreData>(CORE, { login, from: from.toISOString(), to: to.toISOString() });
+  const user = core.user;
+  if (!user) throw new GitHubError(`No GitHub user named "${login}".`, "not_found");
+
+  const notes: string[] = [];
+  const [scan, external] = await Promise.all([scanRepos(user.login), collectExternal(user.login)]);
+
+  const cc = user.contributionsCollection;
+  const yearCommits = new Map(cc.commitContributionsByRepository.map((r) => [r.repository.nameWithOwner.toLowerCase(), r.contributions.totalCount]));
+  const sizes = new Map(scan.repos.map((r) => [r.nameWithOwner, r.diskKb]));
+  const inspected = await inspectRepos(inspectionCandidates(user.login, scan.repos), sizes, user.id, yearCommits, notes);
+
+  const calendar: ContributionDay[] = cc.contributionCalendar.weeks.flatMap((w) =>
+    w.contributionDays.map((d) => ({ date: d.date, count: d.contributionCount })),
+  );
+  const commits = split(cc.commitContributionsByRepository, user.login);
+  const pulls = split(cc.pullRequestContributionsByRepository, user.login);
+  const reviews = split(cc.pullRequestReviewContributionsByRepository, user.login);
+  const issues = split(cc.issueContributionsByRepository, user.login);
+  const touched = new Set(
+    [
+      ...cc.commitContributionsByRepository,
+      ...cc.pullRequestContributionsByRepository,
+      ...cc.pullRequestReviewContributionsByRepository,
+      ...cc.issueContributionsByRepository,
+    ].map((r) => r.repository.nameWithOwner.toLowerCase()),
+  );
+
+  return {
+    notes,
+    evidence: {
+      login: user.login,
+      name: user.name?.trim() || null,
+      avatarUrl: user.avatarUrl,
+      bio: user.bio?.trim() || null,
+      company: user.company?.trim() || null,
+      location: user.location?.trim() || null,
+      websiteUrl: user.websiteUrl?.trim() || null,
+      createdAt: user.createdAt,
+      followers: user.followers.totalCount,
+      following: user.following.totalCount,
+      ownedRepoCount: scan.total,
+      forkCount: user.forks.totalCount,
+      repos: scan.repos,
+      reposTruncated: scan.truncated,
+      inspected,
+      year: {
+        from: from.toISOString(),
+        to: to.toISOString(),
+        calendar,
+        totalContributions: cc.contributionCalendar.totalContributions,
+        restricted: cc.restrictedContributionsCount,
+        commitsOwn: commits.own,
+        commitsExternal: commits.external,
+        pullsOwn: pulls.own,
+        pullsExternal: pulls.external,
+        reviewsExternal: reviews.external,
+        issuesExternal: issues.external,
+        reposTouched: touched.size,
+      },
+      external,
+      fetchedAt: to.toISOString(),
+    },
+  };
+}
