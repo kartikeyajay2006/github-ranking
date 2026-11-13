@@ -1,6 +1,13 @@
-import type { Assessment, Band, DimensionKey, WeightingMode } from "../types";
+import type { Band, DimensionKey, WeightingMode } from "../types";
 import { DIMENSION_LABELS, DIMENSION_WEIGHTS, bandFor, orientationFor } from "./individual";
 import { round1 } from "./curves";
+
+/** What team scoring needs from each member: their finished score, dimension scores and work split. */
+export interface MemberScore {
+  total: number;
+  dimensions: { key: DimensionKey; score: number }[];
+  split: { own: number; external: number };
+}
 
 /** A team lead's share is 1.2× an equal share: 2 members → 60/40, 3 → 40/30/30, 4 → 30/23.3×3, 5 → 24/19×4. */
 export const LEADER_FACTOR = 1.2;
@@ -43,11 +50,11 @@ export interface TeamAssessment {
  * team only weights the finished scores, so no member's assessment is influenced by a teammate's.
  */
 export function assessTeam(
-  members: { login: string; assessment: Assessment | null }[],
+  members: { login: string; assessment: MemberScore | null }[],
   leader: string | null,
   mode: WeightingMode,
 ): TeamAssessment | null {
-  const ready = members.filter((m): m is { login: string; assessment: Assessment } => !!m.assessment);
+  const ready = members.filter((m): m is { login: string; assessment: MemberScore } => !!m.assessment);
   const pending = members.filter((m) => !m.assessment).map((m) => m.login);
   if (!ready.length) return null;
 

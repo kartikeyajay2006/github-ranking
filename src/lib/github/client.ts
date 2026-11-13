@@ -45,7 +45,7 @@ export interface RateLimit {
 let lastRateLimit: RateLimit | null = null;
 
 /** GitHub penalises bursts of concurrent requests (secondary limits), so every call queues through this gate. */
-const MAX_IN_FLIGHT = 4;
+const MAX_IN_FLIGHT = 6;
 let inFlight = 0;
 const waiting: (() => void)[] = [];
 async function acquire() {

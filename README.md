@@ -25,6 +25,7 @@ Paste a username and get a score out of 100. Every point traces back to public G
 - [How a score is built](#how-a-score-is-built)
 - [What counts as whose work](#what-counts-as-whose-work)
 - [Teams](#teams)
+- [Bulk upload](#bulk-upload)
 - [Fairness guarantees](#fairness-guarantees)
 - [Quick start](#quick-start)
 - [Configuration](#configuration)
@@ -65,7 +66,7 @@ Six dimensions, each scored 0–100 and weighted into a total. **55% of the scor
 | **Open-source contribution** | 10% | Has code they wrote been accepted into other people's projects? |
 | **Engineering breadth** | 8% | Range of languages, substantial projects and collaborations |
 
-**Bands:** Exceptional 80+ · Strong 65–80 · Proficient 50–65 · Developing 35–50 · Emerging below 35.
+**Bands:** Exceptional 75+ · Strong 60–75 · Proficient 50–60 · Developing 35–50 · Emerging 12–35 · Insufficient below 12 (too little public work to judge; never selected, whatever the cut-off).
 
 Every count passes through a **saturating log curve** with a fixed target. Early progress counts a lot, later progress less, and nothing exceeds 100%. Example (stars, target 1,000):
 
@@ -164,13 +165,24 @@ The lead carries 1.2× an equal share (`1.2 / n`). Without a designated lead, a 
 
 ---
 
+## Bulk upload
+
+The **Upload** page ranks an entire application list at once.
+
+1. **Give it the document:** an uploaded file (PDF, Word `.docx`, Excel `.xlsx`, CSV/TSV, text, Markdown, JSON, HTML), a link (Google Sheets, Google Docs, Google Drive or any public file), or pasted text.
+2. **Check the extraction:** team names, leads, members, e-mails and GitHub accounts are read automatically. This covers Google Form exports, one-person-per-row sheets, "Team 1: …" documents, tables inside PDFs and Word files, and GitHub links hidden behind link text. Every team found is listed before anything runs. Optional AI extraction (Claude, needs `ANTHROPIC_API_KEY`) handles free-form documents.
+3. **Rank in the background:** teams are processed one by one, three at a time, and each result is saved the moment it finishes. The ranking fills in live, survives restarts, and pauses by itself when GitHub's hourly limit runs out, then resumes.
+4. **Select:** set a top-N cut-off, search, and export the ranking as CSV. Teams in the *Insufficient* band are never selected.
+
+Members without a usable GitHub account (none given, or the account doesn't exist) **count as 0 by default**. They keep their share of the team's weight, so a team can't raise its score by leaving a weaker member's GitHub blank. "Leave them out" is available per import.
+
 ## Fairness guarantees
 
 - **One person, one context.** An assessment reads a single account's data. No other participant is consulted, compared or used for normalisation.
 - **Absolute thresholds.** Adding, removing or re-analysing anyone never moves another person's score; rankings are a plain sort.
 - **Deterministic.** The same evidence always produces the same score. The scoring functions are pure and unit-tested.
 - **Traceable.** Every profile shows the evidence behind each factor and notes anything that couldn't be measured, such as private contributions or very large histories.
-- **Versioned.** Each assessment records its methodology version (currently `2026.11-r6`). Changing the rules bumps the version, and older snapshots are re-crawled the next time they're requested.
+- **Versioned.** Each assessment records its methodology version (currently `2026.11-r8`). Changing the rules bumps the version, and older snapshots are re-crawled the next time they're requested.
 
 ---
 

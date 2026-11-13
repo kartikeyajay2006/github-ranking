@@ -8,7 +8,7 @@ import { listIndividuals } from "@/lib/store";
 export default async function IndividualsPage() {
   await connection();
   const rows = listIndividuals();
-  const median = rows.length ? rows.map((r) => r.profile.assessment.total).sort((a, b) => a - b)[Math.floor((rows.length - 1) / 2)]! : null;
+  const median = rows.length ? rows.map((r) => r.summary.total).sort((a, b) => a - b)[Math.floor((rows.length - 1) / 2)]! : null;
 
   return (
     <div className="wrap">
@@ -69,34 +69,34 @@ export default async function IndividualsPage() {
             </thead>
             <tbody>
               {rows.map((row, i) => {
-                const { assessment: a, evidence: e } = row.profile;
-                const rank = rows.findIndex((r) => r.profile.assessment.total === a.total) + 1;
+                const s = row.summary;
+                const rank = rows.findIndex((r) => r.summary.total === s.total) + 1;
                 return (
                   <tr key={row.login} style={{ ["--i" as string]: i }}>
                     <td className="rank">{rank}</td>
                     <td>
                       <div className="who">
-                        <Avatar src={e.avatarUrl} login={e.login} />
+                        <Avatar src={s.avatarUrl} login={s.login} />
                         <span className="names">
-                          <Link className="primary" href={`/u/${e.login}`}>
-                            {e.name ?? e.login}
+                          <Link className="primary" href={`/u/${s.login}`}>
+                            {s.name ?? s.login}
                           </Link>
-                          <span className="secondary">@{e.login}</span>
+                          <span className="secondary">@{s.login}</span>
                         </span>
                       </div>
                     </td>
-                    <td className="score-cell">{fmt(a.total, 1)}</td>
+                    <td className="score-cell">{fmt(s.total, 1)}</td>
                     <td className="hide-sm">
-                      <Band band={a.band} />
+                      <Band band={s.band} />
                     </td>
                     <td className="hide-md">
-                      <Strip dimensions={a.dimensions} i={i} />
+                      <Strip dimensions={s.dimensions} i={i} />
                     </td>
                     <td className="hide-md">
-                      <Split own={a.split.own} external={a.split.external} i={i} />
+                      <Split own={s.split.own} external={s.split.external} i={i} />
                     </td>
                     <td className="right hide-sm muted" style={{ fontSize: 12.5, whiteSpace: "nowrap" }}>
-                      {relative(row.profile.analyzedAt)}
+                      {relative(s.analyzedAt)}
                     </td>
                   </tr>
                 );

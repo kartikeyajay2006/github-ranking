@@ -1,7 +1,7 @@
 import "server-only";
 import { randomBytes } from "node:crypto";
 import { db, transaction } from "./db";
-import type { Assessment, ProfileEvidence, StoredProfile, Team, WeightingMode } from "./types";
+import type { AbsentMember, Assessment, ProfileEvidence, ProfileSummary, StoredProfile, Team, WeightingMode } from "./types";
 
 interface ProfileRow {
   login: string;
@@ -36,14 +36,65 @@ export function getProfiles(logins: string[]): Map<string, StoredProfile> {
   return out;
 }
 
+export function summarise(evidence: Pick<ProfileEvidence, "login" | "name" | "avatarUrl">, assessment: Assessment, analyzedAt: number): ProfileSummary {
+  return {
+    login: evidence.login,
+    name: evidence.name,
+    avatarUrl: evidence.avatarUrl,
+    total: assessment.total,
+    band: assessment.band,
+    methodology: assessment.methodology,
+    analyzedAt,
+    dimensions: assessment.dimensions.map((d) => ({ key: d.key, label: d.label, weight: d.weight, score: d.score })),
+    split: assessment.split,
+  };
+}
+
 export function saveProfile(evidence: ProfileEvidence, assessment: Assessment, analyzedAt = Date.now()) {
   db()
     .prepare(
-      `INSERT INTO profiles (login, evidence, assessment, total, methodology, analyzed_at) VALUES (?, ?, ?, ?, ?, ?)
+      `INSERT INTO profiles (login, evidence, assessment, total, methodology, analyzed_at, summary) VALUES (?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(login) DO UPDATE SET login = excluded.login, evidence = excluded.evidence, assessment = excluded.assessment,
-         total = excluded.total, methodology = excluded.methodology, analyzed_at = excluded.analyzed_at`,
+         total = excluded.total, methodology = excluded.methodology, analyzed_at = excluded.analyzed_at, summary = excluded.summary`,
     )
-    .run(evidence.login, JSON.stringify(evidence), JSON.stringify(assessment), assessment.total, assessment.methodology, analyzedAt);
+    .run(
+      evidence.login,
+      JSON.stringify(evidence),
+      JSON.stringify(assessment),
+      assessment.total,
+      assessment.methodology,
+      analyzedAt,
+      JSON.stringify(summarise(evidence, assessment, analyzedAt)),
+    );
+}
+
+let summariesChecked = false;
+/** One-time backfill for profiles stored before summaries existed. */
+function ensureSummaries() {
+  if (summariesChecked) return;
+  const missing = db().prepare("SELECT login, evidence, assessment, analyzed_at FROM profiles WHERE summary IS NULL").all() as unknown as ProfileRow[];
+  const update = db().prepare("UPDATE profiles SET summary = ? WHERE login = ?");
+  for (const row of missing) {
+    const p = toProfile(row);
+    update.run(JSON.stringify(summarise(p.evidence, p.assessment, p.analyzedAt)), row.login);
+  }
+  summariesChecked = true;
+}
+
+export function getSummaries(logins: string[]): Map<string, ProfileSummary> {
+  ensureSummaries();
+  const out = new Map<string, ProfileSummary>();
+  for (let i = 0; i < logins.length; i += 500) {
+    const part = logins.slice(i, i + 500);
+    const rows = db()
+      .prepare(`SELECT summary FROM profiles WHERE login IN (${part.map(() => "?").join(",")})`)
+      .all(...part) as { summary: string }[];
+    for (const r of rows) {
+      const s = JSON.parse(r.summary) as ProfileSummary;
+      out.set(s.login.toLowerCase(), s);
+    }
+  }
+  return out;
 }
 
 /* ------------------------------------------------------------- individuals ------------------------------------------------------------- */
@@ -51,18 +102,19 @@ export function saveProfile(evidence: ProfileEvidence, assessment: Assessment, a
 export interface StandingRow {
   login: string;
   addedAt: number;
-  profile: StoredProfile;
+  summary: ProfileSummary;
 }
 
 export function listIndividuals(): StandingRow[] {
+  ensureSummaries();
   const rows = db()
     .prepare(
-      `SELECT p.login, p.evidence, p.assessment, p.analyzed_at, i.added_at
+      `SELECT p.login, p.summary, i.added_at
          FROM individuals i JOIN profiles p ON p.login = i.login
         ORDER BY p.total DESC, p.login ASC`,
     )
-    .all() as unknown as (ProfileRow & { added_at: number })[];
-  return rows.map((r) => ({ login: r.login, addedAt: r.added_at, profile: toProfile(r) }));
+    .all() as unknown as { login: string; summary: string; added_at: number }[];
+  return rows.map((r) => ({ login: r.login, addedAt: r.added_at, summary: JSON.parse(r.summary) as ProfileSummary }));
 }
 
 export function isIndividual(login: string): boolean {
@@ -85,6 +137,8 @@ interface TeamRow {
   mode: WeightingMode;
   leader: string | null;
   created_at: number;
+  job_id: string | null;
+  absent: string | null;
 }
 
 function hydrate(rows: TeamRow[]): Team[] {
@@ -98,6 +152,8 @@ function hydrate(rows: TeamRow[]): Team[] {
     mode: r.mode,
     leader: r.leader,
     createdAt: r.created_at,
+    jobId: r.job_id,
+    absent: r.absent ? (JSON.parse(r.absent) as AbsentMember[]) : [],
     members: members.filter((m) => m.team_id === r.id).map((m) => ({ login: m.login, addedAt: m.added_at })),
   }));
 }
@@ -127,15 +183,20 @@ function slug(name: string) {
   return `${base || "team"}-${randomBytes(3).toString("hex")}`;
 }
 
+/** Manually created teams only: imported teams are managed by their import. */
 export function findTeamByName(name: string): Team | null {
-  const row = db().prepare("SELECT * FROM teams WHERE name = ? COLLATE NOCASE").get(name) as TeamRow | undefined;
+  const row = db().prepare("SELECT * FROM teams WHERE name = ? COLLATE NOCASE AND job_id IS NULL").get(name) as TeamRow | undefined;
   return row ? hydrate([row])[0]! : null;
 }
 
-export function createTeam(name: string, mode: WeightingMode): string {
+export function createTeam(name: string, mode: WeightingMode, jobId: string | null = null): string {
   const id = slug(name);
-  db().prepare("INSERT INTO teams (id, name, mode, leader, created_at) VALUES (?, ?, ?, NULL, ?)").run(id, name, mode, Date.now());
+  db().prepare("INSERT INTO teams (id, name, mode, leader, created_at, job_id) VALUES (?, ?, ?, NULL, ?, ?)").run(id, name, mode, Date.now(), jobId);
   return id;
+}
+
+export function jobNames(): Map<string, string> {
+  return new Map((db().prepare("SELECT id, name FROM import_jobs").all() as { id: string; name: string }[]).map((r) => [r.id, r.name]));
 }
 
 export function addTeamMembers(teamId: string, logins: string[]) {
@@ -157,6 +218,10 @@ export function updateTeam(id: string, patch: { name?: string; mode?: WeightingM
   if (patch.name !== undefined) db().prepare("UPDATE teams SET name = ? WHERE id = ?").run(patch.name, id);
   if (patch.mode !== undefined) db().prepare("UPDATE teams SET mode = ? WHERE id = ?").run(patch.mode, id);
   if (patch.leader !== undefined) db().prepare("UPDATE teams SET leader = ? WHERE id = ?").run(patch.leader, id);
+}
+
+export function setTeamAbsent(id: string, absent: AbsentMember[]) {
+  db().prepare("UPDATE teams SET absent = ? WHERE id = ?").run(absent.length ? JSON.stringify(absent) : null, id);
 }
 
 export function deleteTeam(id: string) {

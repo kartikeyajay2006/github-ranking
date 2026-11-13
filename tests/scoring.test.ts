@@ -164,7 +164,7 @@ describe("assess", () => {
       NOW,
     );
     expect(a.total).toBe(0);
-    expect(a.band).toBe("Emerging");
+    expect(a.band).toBe("Insufficient");
     expect(a.orientation).toBe("Insufficient activity");
     expect(a.notes.some((n) => n.includes("no public original repositories"))).toBe(true);
   });
@@ -183,10 +183,15 @@ describe("assess", () => {
 
 describe("bands and orientation", () => {
   it("map scores to bands at fixed cut-offs", () => {
-    expect(bandFor(80)).toBe("Exceptional");
-    expect(bandFor(79.9)).toBe("Strong");
+    expect(bandFor(75)).toBe("Exceptional");
+    expect(bandFor(74.9)).toBe("Strong");
+    expect(bandFor(60)).toBe("Strong");
+    expect(bandFor(59.9)).toBe("Proficient");
     expect(bandFor(50)).toBe("Proficient");
+    expect(bandFor(35)).toBe("Developing");
     expect(bandFor(34.9)).toBe("Emerging");
+    expect(bandFor(12)).toBe("Emerging");
+    expect(bandFor(11.9)).toBe("Insufficient");
   });
 
   it("classify own vs external work", () => {

@@ -115,8 +115,9 @@ export default function MethodPage() {
             </tbody>
           </table>
           <p>
-            Bands: <strong>Exceptional</strong> 80+, <strong>Strong</strong> 65–80, <strong>Proficient</strong> 50–65, <strong>Developing</strong> 35–50,{" "}
-            <strong>Emerging</strong> below 35.
+            Bands: <strong>Exceptional</strong> 75+, <strong>Strong</strong> 60–75, <strong>Proficient</strong> 50–60, <strong>Developing</strong> 35–50,{" "}
+            <strong>Emerging</strong> 12–35, <strong>Insufficient</strong> below 12. A score that low means there is too little public work to judge, so
+            Insufficient teams are never selected, whatever the cut-off.
           </p>
 
           <h2 id="projects">Project quality</h2>

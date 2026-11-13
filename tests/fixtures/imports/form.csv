@@ -1,0 +1,8 @@
+Timestamp,Team Name,Team Leader Name,Team Leader Email,Team Leader GitHub Profile,Member 2 Name,Member 2 Email,Member 2 GitHub,Member 3 Name,Member 3 GitHub
+11/12/2026 10:01,Rocket,Dan Abramov,dan@example.com,https://github.com/gaearon,TJ Holowaychuk,tj@example.com,github.com/tj,Anthony Fu,@antfu
+11/12/2026 10:05,Nova,Sindre Sorhus,sindre@example.com,sindresorhus,shadcn,shad@example.com,https://github.com/shadcn,,
+11/12/2026 10:09,Orbit,,,,Kent C. Dodds,kent@example.com,kentcdodds,Mitchell Hashimoto,https://github.com/mitchellh
+11/12/2026 10:12,Solo Star,Evan You,evan@example.com,https://github.com/yyx990803,,,,,
+11/12/2026 10:15,Ghost,Nobody Real,ghost@example.com,zz-not-a-real-user-91827,Addy Osmani,addy@example.com,addyosmani,,
+11/12/2026 10:20,Paper,Ann Paper,ann@example.com,,Ben Paper,ben@example.com,,,
+11/12/2026 10:22,Rocket,Addy Osmani,addy@example.com,addyosmani,,,,,

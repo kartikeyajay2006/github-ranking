@@ -11,3 +11,4 @@ data/*.db-*
 .DS_Store
 coverage/
 calibration.txt
+bench.txt

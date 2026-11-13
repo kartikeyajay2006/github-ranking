@@ -1,0 +1,28 @@
+INNOVATION HACKATHON 2026 — CONFIRMED TEAMS
+
+Team 1: Rocket
+Team Leader: Dan Abramov (dan@example.com) — https://github.com/gaearon
+Member 2: TJ Holowaychuk, GitHub: tj
+Member 3: Anthony Fu
+GitHub: https://github.com/antfu
+Project repo: https://github.com/rocket-team/app
+
+Team 2 - Nova
+Leader: Sindre Sorhus
+github.com/sindresorhus
+Member: shadcn github.com/shadcn
+
+Team 3: Orbit
+Member 1: Kent C. Dodds — github.com/kentcdodds
+Member 2: Mitchell Hashimoto — github.com/mitchellh
+
+Team 4: Solo Star
+Leader: Evan You, https://github.com/yyx990803
+
+Team 5: Ghost
+Leader: Nobody Real, GitHub: zz-not-a-real-user-91827
+Member: Addy Osmani, https://github.com/addyosmani
+
+Team 6: Paper
+Leader: Ann Paper (ann@example.com)
+Member: Ben Paper (ben@example.com)

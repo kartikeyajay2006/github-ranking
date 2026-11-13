@@ -14,7 +14,7 @@ import type {
 } from "../types";
 import { DAY, clamp01, daysSince, logRef, plural, ramp, round1 } from "./curves";
 
-export const METHODOLOGY_VERSION = "2026.11-r6";
+export const METHODOLOGY_VERSION = "2026.11-r8";
 
 /**
  * Every threshold below is a fixed constant. Nothing is normalised against a cohort, so an
@@ -43,12 +43,16 @@ export const DIMENSION_LABELS: Record<DimensionKey, string> = {
 export const PORTFOLIO_WEIGHTS = [0.35, 0.25, 0.18, 0.12, 0.1] as const;
 
 export function bandFor(score: number): Band {
-  if (score >= 80) return "Exceptional";
-  if (score >= 65) return "Strong";
+  if (score >= 75) return "Exceptional";
+  if (score >= 60) return "Strong";
   if (score >= 50) return "Proficient";
   if (score >= 35) return "Developing";
-  return "Emerging";
+  if (score >= 12) return "Emerging";
+  return "Insufficient";
 }
+
+/** "Insufficient" (too little public evidence to judge) is never selected, whatever the cut-off. */
+export const isSelectable = (band: string | null | undefined) => band !== "Insufficient";
 
 /* ------------------------------------------------------------ repository quality ------------------------------------------------------------ */
 

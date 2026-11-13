@@ -48,6 +48,7 @@ export interface BatchResult {
   login?: string;
   ok: boolean;
   message?: string;
+  kind?: GitHubError["kind"] | "unknown";
 }
 
 /** Splits free text ("a, b\nhttps://github.com/c @d") into distinct logins, keeping invalid tokens for reporting. */
@@ -66,7 +67,7 @@ export function parseLogins(text: string): { logins: string[]; invalid: string[]
   return { logins, invalid };
 }
 
-/** Analyses several accounts, two at a time. Each one is still collected and scored on its own. */
+/** Analyses several accounts, three at a time. Each one is still collected and scored on its own. */
 export async function analyzeMany(logins: string[], opts: { force?: boolean } = {}): Promise<{ results: BatchResult[]; profiles: StoredProfile[] }> {
   const results: BatchResult[] = new Array(logins.length);
   const profiles: StoredProfile[] = [];
@@ -80,11 +81,16 @@ export async function analyzeMany(logins: string[], opts: { force?: boolean } = 
         profiles.push(p);
         results[i] = { input, login: p.login, ok: true };
       } catch (err) {
-        results[i] = { input, ok: false, message: err instanceof GitHubError ? err.message : "Analysis failed unexpectedly." };
+        results[i] = {
+          input,
+          ok: false,
+          message: err instanceof GitHubError ? err.message : "Analysis failed unexpectedly.",
+          kind: err instanceof GitHubError ? err.kind : "unknown",
+        };
         if (!(err instanceof GitHubError)) console.error(err);
       }
     }
   };
-  await Promise.all([worker(), worker()]);
+  await Promise.all([worker(), worker(), worker()]);
   return { results, profiles };
 }

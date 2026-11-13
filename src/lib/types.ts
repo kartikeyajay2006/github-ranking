@@ -174,7 +174,7 @@ export interface PullBreakdown {
   repos: { repo: string; stars: number; count: number; kind: PullClass; last: string; lines: number }[];
 }
 
-export type Band = "Exceptional" | "Strong" | "Proficient" | "Developing" | "Emerging";
+export type Band = "Exceptional" | "Strong" | "Proficient" | "Developing" | "Emerging" | "Insufficient";
 export type Orientation = "Builder-led" | "Balanced" | "Contributor-led" | "Insufficient activity";
 
 export interface Assessment {
@@ -191,6 +191,19 @@ export interface Assessment {
   notes: string[];
 }
 
+/** The few fields standings need, stored beside each analysis so large lists never parse full evidence. */
+export interface ProfileSummary {
+  login: string;
+  name: string | null;
+  avatarUrl: string;
+  total: number;
+  band: Band;
+  methodology: string;
+  analyzedAt: number;
+  dimensions: { key: DimensionKey; label: string; weight: number; score: number }[];
+  split: { own: number; external: number; externalShare: number };
+}
+
 export interface StoredProfile {
   login: string;
   evidence: ProfileEvidence;
@@ -200,11 +213,23 @@ export interface StoredProfile {
 
 export type WeightingMode = "leader" | "equal";
 
+export interface AbsentMember {
+  /** Stable key used for weighting: the GitHub handle if one was given, else "~" + name. */
+  label: string;
+  name: string | null;
+  github: string | null;
+  reason: string;
+}
+
 export interface Team {
   id: string;
   name: string;
   mode: WeightingMode;
   leader: string | null;
   createdAt: number;
+  /** Set when the team was created by a bulk import. */
+  jobId: string | null;
+  /** Members without a usable GitHub account who count as a score of 0 (bulk imports only). */
+  absent: AbsentMember[];
   members: { login: string; addedAt: number }[];
 }

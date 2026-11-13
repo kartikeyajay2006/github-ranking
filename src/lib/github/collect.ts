@@ -171,21 +171,36 @@ interface MoreCommitsData {
 const DEEP_RHYTHM_REPOS = 3;
 const DEEP_RHYTHM_PAGES = 4;
 
-async function moreCommitDates(repo: string, authorId: string, cursor: string): Promise<string[]> {
-  const [owner, name] = repo.split("/");
-  const dates: string[] = [];
-  let after: string | null = cursor;
-  for (let page = 0; page < DEEP_RHYTHM_PAGES && after; page++) {
+/**
+ * Pages further back through each repository's history at once: one request per round fetches the next
+ * 100 commits of every repository that still has more, instead of one request per repository per page.
+ */
+async function moreCommitDates(repos: { name: string; cursor: string }[], authorId: string): Promise<Map<string, string[]>> {
+  const dates = new Map(repos.map((r) => [r.name, [] as string[]]));
+  let open = repos.map((r) => ({ ...r }));
+  for (let round = 0; round < DEEP_RHYTHM_PAGES && open.length; round++) {
+    const query = `query MoreCommits($authorId: ID!) {\n${open
+      .map((r, i) => {
+        const [owner, name] = r.name.split("/");
+        return `r${i}: repository(owner: ${JSON.stringify(owner)}, name: ${JSON.stringify(name)}) { defaultBranchRef { target { ... on Commit {
+          history(author: { id: $authorId }, first: 100, after: ${JSON.stringify(r.cursor)}) { pageInfo { hasNextPage endCursor } nodes { committedDate } } } } } }`;
+      })
+      .join("\n")}\n}`;
+    let data: Record<string, MoreCommitsData["repository"]>;
     try {
-      const res: { data: MoreCommitsData } = await graphql<MoreCommitsData>(MORE_COMMITS, { owner, name, authorId, after }, { timeoutMs: 10_000, retries: 0 });
-      const h: NonNullable<NonNullable<MoreCommitsData["repository"]>["defaultBranchRef"]>["target"]["history"] = res.data.repository?.defaultBranchRef?.target.history;
-      if (!h) break;
-      dates.push(...h.nodes.map((n: { committedDate: string }) => n.committedDate));
-      after = h.pageInfo.hasNextPage ? h.pageInfo.endCursor : null;
+      ({ data } = await graphql<Record<string, MoreCommitsData["repository"]>>(query, { authorId }, { timeoutMs: 12_000, retries: 0 }));
     } catch (err) {
       if (err instanceof GitHubError && err.kind === "upstream") break;
       throw err;
     }
+    const next: typeof open = [];
+    open.forEach((r, i) => {
+      const h = data[`r${i}`]?.defaultBranchRef?.target.history;
+      if (!h) return;
+      dates.get(r.name)!.push(...h.nodes.map((n) => n.committedDate));
+      if (h.pageInfo.hasNextPage && h.pageInfo.endCursor) next.push({ name: r.name, cursor: h.pageInfo.endCursor });
+    });
+    open = next;
   }
   return dates;
 }
@@ -309,8 +324,27 @@ async function inspectRepos(
   const detail = new Map<string, InspectNode>();
   const commits = new Map<string, CommitsNode>();
   const commitsUnavailable: string[] = [];
+
+  // Detail and commit counts in one request per batch. Huge repositories, and any repository whose
+  // combined request times out, fall back to two separate requests (commit counting gives up sooner).
+  const separately: string[] = [...heavy];
+  const combinedBatches = batches.filter((b) => !(b.length === 1 && heavy.includes(b[0]!)));
   await Promise.all(
-    batches.map(async (batch) => {
+    combinedBatches.map(async (batch) => {
+      const both = await perRepo<InspectNode & CommitsNode>(
+        batch,
+        (n) => ({ query: `query InspectAll($authorId: ID!) {\n${aliases(n, "Both")}\n}\n${REPO_FRAGMENT}\n${COMMITS_FRAGMENT}\nfragment Both on Repository { ...Inspect ...Commits }`, variables: { authorId } }),
+        20_000,
+        (name) => separately.push(name),
+      );
+      for (const [k, v] of both) {
+        detail.set(k, v);
+        commits.set(k, v);
+      }
+    }),
+  );
+  await Promise.all(
+    separately.map((name) => [name]).map(async (batch) => {
       const [d, c] = await Promise.all([
         perRepo<InspectNode>(batch, (n) => ({ query: `query Inspect {\n${aliases(n, "Inspect")}\n}\n${REPO_FRAGMENT}` }), 20_000, (name) =>
           notes.push(`${name} could not be inspected (GitHub timed out on it).`),
@@ -358,14 +392,18 @@ async function inspectRepos(
 
   // Read deeper into the history of the person's busiest projects.
   const busiest = pending.sort((a, b) => b.repo.commitsByOwner - a.repo.commitsByOwner).slice(0, DEEP_RHYTHM_REPOS);
-  await Promise.all(
-    busiest.map(async (p) => {
-      const rhythm = commitRhythm([...p.dates, ...(await moreCommitDates(p.repo.nameWithOwner, authorId, p.cursor))]);
+  if (busiest.length) {
+    const more = await moreCommitDates(
+      busiest.map((p) => ({ name: p.repo.nameWithOwner, cursor: p.cursor })),
+      authorId,
+    );
+    for (const p of busiest) {
+      const rhythm = commitRhythm([...p.dates, ...(more.get(p.repo.nameWithOwner) ?? [])]);
       p.repo.authoredWeeks = rhythm.weeks;
       p.repo.authoredFirst = rhythm.first;
       p.repo.authoredLast = rhythm.last;
-    }),
-  );
+    }
+  }
   return result;
 }
 
@@ -482,9 +520,83 @@ async function mergedPulls(login: string): Promise<ExternalPullRequest[]> {
   return out;
 }
 
+const EXTERNAL_ALL = /* GraphQL */ `
+  query External($merged: String!, $closed: String!, $open: String!, $issues: String!) {
+    merged: search(query: $merged, type: ISSUE, first: 40) {
+      issueCount
+      pageInfo { hasNextPage endCursor }
+      nodes { ... on PullRequest { mergedAt additions deletions authorAssociation mergedBy { login } repository { nameWithOwner stargazerCount } } }
+    }
+    closed: search(query: $closed, type: ISSUE, first: 1) { issueCount }
+    open: search(query: $open, type: ISSUE, first: 1) { issueCount }
+    issues: search(query: $issues, type: ISSUE, first: 100) {
+      issueCount
+      nodes { ... on Issue { authorAssociation repository { nameWithOwner } } }
+    }
+  }
+`;
+
+interface ExternalAllData {
+  merged: { issueCount: number } & PullsData["search"];
+  closed: { issueCount: number };
+  open: { issueCount: number };
+  issues: { issueCount: number } & IssuesData["search"];
+}
+
+function toPull(n: PullNode | null, login: string): ExternalPullRequest | null {
+  if (!n?.repository || !n.mergedAt) return null;
+  return {
+    repo: n.repository.nameWithOwner,
+    stars: n.repository.stargazerCount,
+    mergedAt: n.mergedAt,
+    lines: (n.additions ?? 0) + (n.deletions ?? 0),
+    association: n.authorAssociation ?? "NONE",
+    selfMerged: !!n.mergedBy && n.mergedBy.login.toLowerCase() === login.toLowerCase(),
+  };
+}
+
 async function collectExternal(login: string): Promise<ProfileEvidence["external"]> {
   // "-user:" excludes every repository owned by the account itself.
   const scope = `author:${login} -user:${login}`;
+  const mergedQuery = `is:pr is:merged ${scope} sort:created-desc`;
+  // One request for the counts, the issue list and the first page of merged PRs; later pages only if needed.
+  let all: ExternalAllData | null = null;
+  try {
+    ({ data: all } = await graphql<ExternalAllData>(EXTERNAL_ALL, {
+      merged: mergedQuery,
+      closed: `is:pr is:closed is:unmerged ${scope}`,
+      open: `is:pr is:open archived:false ${scope}`,
+      issues: `is:issue ${scope} sort:created-desc`,
+    }));
+  } catch (err) {
+    if (!(err instanceof GitHubError && err.kind === "upstream")) throw err;
+  }
+  if (all) {
+    const sample = all.merged.nodes.map((n) => toPull(n, login)).filter((p): p is ExternalPullRequest => !!p);
+    let after = all.merged.pageInfo.hasNextPage ? all.merged.pageInfo.endCursor : null;
+    for (let page = 1; page < PULL_PAGES && after; page++) {
+      let res: { data: PullsData };
+      try {
+        res = await graphql<PullsData>(MERGED_PULLS, { q: mergedQuery, first: PULL_PAGE_SIZE, after });
+      } catch (err) {
+        if (!(err instanceof GitHubError && err.kind === "upstream")) throw err;
+        res = await graphql<PullsData>(MERGED_PULLS, { q: mergedQuery, first: PULL_PAGE_SIZE / 2, after });
+      }
+      sample.push(...res.data.search.nodes.map((n) => toPull(n, login)).filter((p): p is ExternalPullRequest => !!p));
+      after = res.data.search.pageInfo.hasNextPage ? res.data.search.pageInfo.endCursor : null;
+    }
+    return {
+      merged: Math.max(all.merged.issueCount, sample.length),
+      closedUnmerged: all.closed.issueCount,
+      open: all.open.issueCount,
+      issues: all.issues.issueCount,
+      sample,
+      issueSample: all.issues.nodes
+        .filter((n): n is { authorAssociation: string; repository: { nameWithOwner: string } } => !!n?.repository)
+        .map((n) => ({ repo: n.repository.nameWithOwner, association: n.authorAssociation ?? "NONE" })),
+    };
+  }
+  // Fallback for very heavy accounts where the combined request times out: smaller separate requests.
   const [{ data }, sample, issues] = await Promise.all([
     graphql<CountsData>(EXTERNAL_COUNTS, {
       merged: `is:pr is:merged ${scope}`,
@@ -586,12 +698,16 @@ export async function collectProfile(rawLogin: string): Promise<{ evidence: Prof
 
   const to = new Date();
   const from = new Date(to.getTime() - 365 * 86_400_000);
-  const { data: core } = await graphql<CoreData>(CORE, { login, from: from.toISOString(), to: to.toISOString() });
+  // The profile, the repository scan and the external-work searches don't depend on each other.
+  const [{ data: core }, scan, external] = await Promise.all([
+    graphql<CoreData>(CORE, { login, from: from.toISOString(), to: to.toISOString() }),
+    scanRepos(login),
+    collectExternal(login),
+  ]);
   const user = core.user;
   if (!user) throw new GitHubError(`No GitHub user named "${login}".`, "not_found");
 
   const notes: string[] = [];
-  const [scan, external] = await Promise.all([scanRepos(user.login), collectExternal(user.login)]);
 
   const cc = user.contributionsCollection;
   const yearCommits = new Map(cc.commitContributionsByRepository.map((r) => [r.repository.nameWithOwner.toLowerCase(), r.contributions.totalCount]));

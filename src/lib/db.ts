@@ -39,7 +39,51 @@ const SCHEMA = /* SQL */ `
   );
 
   CREATE INDEX IF NOT EXISTS team_members_login ON team_members(login);
+
+  -- Bulk imports: one job per uploaded document, one row per team found in it.
+  CREATE TABLE IF NOT EXISTS import_jobs (
+    id             TEXT PRIMARY KEY,
+    name           TEXT NOT NULL,
+    source         TEXT NOT NULL,
+    method         TEXT NOT NULL,
+    status         TEXT NOT NULL CHECK (status IN ('draft', 'running', 'paused', 'done')),
+    leader_policy  TEXT NOT NULL DEFAULT 'first' CHECK (leader_policy IN ('first', 'equal')),
+    cutoff         INTEGER,
+    note           TEXT,
+    resume_at      INTEGER,
+    created_at     INTEGER NOT NULL,
+    started_at     INTEGER,
+    finished_at    INTEGER
+  );
+
+  CREATE TABLE IF NOT EXISTS import_teams (
+    job_id       TEXT NOT NULL REFERENCES import_jobs(id) ON DELETE CASCADE,
+    idx          INTEGER NOT NULL,
+    name         TEXT NOT NULL,
+    members      TEXT NOT NULL,
+    warnings     TEXT NOT NULL DEFAULT '[]',
+    leader       INTEGER,
+    status       TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'running', 'done', 'failed')),
+    team_id      TEXT,
+    score        REAL,
+    band         TEXT,
+    error        TEXT,
+    finished_at  INTEGER,
+    PRIMARY KEY (job_id, idx)
+  );
+
+  CREATE INDEX IF NOT EXISTS import_teams_status ON import_teams(job_id, status);
 `;
+
+/** Additive migrations for databases created by earlier versions. */
+function migrate(conn: DatabaseSync) {
+  const columns = (table: string) => (conn.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((c) => c.name);
+  if (!columns("teams").includes("job_id")) conn.exec("ALTER TABLE teams ADD COLUMN job_id TEXT");
+  if (!columns("profiles").includes("summary")) conn.exec("ALTER TABLE profiles ADD COLUMN summary TEXT");
+  if (!columns("teams").includes("absent")) conn.exec("ALTER TABLE teams ADD COLUMN absent TEXT");
+  if (!columns("import_jobs").includes("missing_policy")) conn.exec("ALTER TABLE import_jobs ADD COLUMN missing_policy TEXT NOT NULL DEFAULT 'zero'");
+  conn.exec("CREATE INDEX IF NOT EXISTS teams_job ON teams(job_id)");
+}
 
 const globalForDb = globalThis as unknown as { __rankingDb?: DatabaseSync };
 
@@ -49,6 +93,7 @@ export function db(): DatabaseSync {
     mkdirSync(dirname(file), { recursive: true });
     const conn = new DatabaseSync(file);
     conn.exec(SCHEMA);
+    migrate(conn);
     globalForDb.__rankingDb = conn;
   }
   return globalForDb.__rankingDb;

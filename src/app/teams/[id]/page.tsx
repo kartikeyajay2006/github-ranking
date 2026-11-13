@@ -5,8 +5,9 @@ import { connection } from "next/server";
 import { addTeamMembers, deleteTeam, refreshTeam, removeTeamMember, renameTeam, setTeamLeader, setTeamMode } from "@/app/actions";
 import { ActionButton, AddMembers, RenameTeam } from "@/components/forms";
 import { Avatar, Band, Meter, fmt, pct, relative, seriesColor } from "@/components/ui";
-import { LEADER_FACTOR, assessTeam } from "@/lib/scoring/team";
-import { getProfiles, getTeam } from "@/lib/store";
+import { LEADER_FACTOR } from "@/lib/scoring/team";
+import { scoreTeam } from "@/lib/teamscore";
+import { getSummaries, getTeam, jobNames } from "@/lib/store";
 
 type Props = { params: Promise<{ id: string }>; searchParams: Promise<{ skipped?: string }> };
 
@@ -22,15 +23,12 @@ export default async function TeamPage({ params, searchParams }: Props) {
   const team = getTeam(id);
   if (!team) notFound();
 
-  const profiles = getProfiles(team.members.map((m) => m.login));
+  const profiles = getSummaries(team.members.map((m) => m.login));
+  const importName = team.jobId ? jobNames().get(team.jobId) : null;
   const members = team.members.map((m) => ({ ...m, profile: profiles.get(m.login.toLowerCase()) ?? null }));
-  const result = assessTeam(
-    members.map((m) => ({ login: m.login, assessment: m.profile?.assessment ?? null })),
-    team.leader,
-    team.mode,
-  );
+  const result = scoreTeam(team, profiles);
   const byLogin = new Map(result?.members.map((m) => [m.login.toLowerCase(), m]));
-  const n = members.length;
+  const n = members.length + team.absent.length;
   const leadActive = team.mode === "leader" && !!team.leader && n > 1;
 
   return (
@@ -57,6 +55,11 @@ export default async function TeamPage({ params, searchParams }: Props) {
                   : "Equal average across members"}
             </span>
             <span>Created {relative(team.createdAt)}</span>
+            {importName && (
+              <Link className="link" href={`/upload/${team.jobId}`}>
+                From import: {importName}
+              </Link>
+            )}
           </p>
           {skipped && (
             <p className="meta" style={{ color: "var(--danger)" }}>
@@ -137,11 +140,11 @@ export default async function TeamPage({ params, searchParams }: Props) {
                     <td>
                       <div className="who">
                         <span className="swatch" style={{ background: colorIndex >= 0 ? seriesColor(colorIndex) : "var(--track)", marginRight: 0 }} aria-hidden />
-                        <Avatar src={m.profile?.evidence.avatarUrl} login={m.login} />
+                        <Avatar src={m.profile?.avatarUrl} login={m.login} />
                         <span className="names">
                           <span>
                             <Link className="primary" href={`/u/${m.login}`} style={{ position: "static" }}>
-                              {m.profile?.evidence.name ?? m.login}
+                              {m.profile?.name ?? m.login}
                             </Link>
                             {isLead && <span className="lead-tag">Lead</span>}
                           </span>
@@ -170,6 +173,39 @@ export default async function TeamPage({ params, searchParams }: Props) {
                         </ActionButton>
                       </div>
                     </td>
+                  </tr>
+                );
+              })}
+              {team.absent.map((a) => {
+                const r = byLogin.get(a.label.toLowerCase());
+                const isLead = !!team.leader && team.leader.toLowerCase() === a.label.toLowerCase();
+                return (
+                  <tr key={a.label} className="absent-row">
+                    <td>
+                      <div className="who">
+                        <span className="swatch" style={{ background: "var(--track)", marginRight: 0 }} aria-hidden />
+                        <span className="avatar absent-avatar" aria-hidden>
+                          ?
+                        </span>
+                        <span className="names">
+                          <span>
+                            <span className="primary">{a.name ?? a.github ?? "Unnamed member"}</span>
+                            {isLead && <span className="lead-tag">Lead</span>}
+                          </span>
+                          <span className="secondary">{a.github ? `@${a.github} · ` : ""}
+                            {a.reason.replace(/\.$/, "")} · counts as 0</span>
+                        </span>
+                      </div>
+                    </td>
+                    <td className="right num">{r ? pct(r.weight) : "—"}</td>
+                    <td className="right num">0.0</td>
+                    <td className="right num" style={{ fontSize: 17 }}>
+                      0.0
+                    </td>
+                    <td className="hide-sm muted" style={{ fontSize: 12.5 }}>
+                      —
+                    </td>
+                    <td />
                   </tr>
                 );
               })}

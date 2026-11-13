@@ -1,6 +1,8 @@
-import type { Band as BandName, Dimension } from "@/lib/types";
+import type { Band as BandName } from "@/lib/types";
 
-const BANDS: BandName[] = ["Emerging", "Developing", "Proficient", "Strong", "Exceptional"];
+type StripDimension = { key: string; label: string; score: number };
+
+const BANDS: BandName[] = ["Insufficient", "Emerging", "Developing", "Proficient", "Strong", "Exceptional"];
 const SHORT: Record<string, string> = { projects: "PRJ", depth: "DEP", opensource: "OSS", activity: "ACT", impact: "IMP", breadth: "BRD" };
 
 export const fmt = (n: number, digits = 0) =>
@@ -34,7 +36,7 @@ export function Band({ band }: { band: BandName }) {
   );
 }
 
-export function Strip({ dimensions, i = 0 }: { dimensions: Dimension[]; i?: number }) {
+export function Strip({ dimensions, i = 0 }: { dimensions: StripDimension[]; i?: number }) {
   return (
     <span className="strip" style={{ ["--i" as string]: i }} role="img" aria-label={dimensions.map((d) => `${d.label} ${fmt(d.score)}`).join(", ")}>
       {dimensions.map((d) => (
