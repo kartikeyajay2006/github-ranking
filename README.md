@@ -16,11 +16,12 @@ Every developer gets a score out of 100 from their public GitHub evidence only. 
 
 | Dimension | Weight | Built from |
 |---|---|---|
-| Project quality | 32% | The 5 best of up to 24 owned repos plus up to 8 team/organisation repos (35/25/18/12/10), each scaled by authorship share: README, docs, tests, CI, licence, releases, authored commits, maintenance, stars, forks |
-| Open-source contribution | 25% | Peer-reviewed PRs only: the author isn't a member or collaborator, and someone else merged it. Weighted by project stature and change size; distinct repos, most prominent project, acceptance rate, issues and reviews |
+| Project quality | 30% | The 5 best of up to 24 owned repos plus up to 8 team/organisation repos (35/25/18/12/10), each scaled by authorship share: README, docs, tests, CI, licence, releases, authored commits, maintenance, stars, forks |
+| Build depth | 20% | How much of their projects the person wrote: authored commits, projects they led (≥50% authorship, 40+ commits), weeks of sustained involvement on their main projects, authorship share of their top five |
+| Open-source contribution | 15% | Peer-reviewed PRs only: the author isn't a member or collaborator, and someone else merged it. Weighted by project stature and change size; distinct repos, most prominent project, acceptance rate, issues and reviews |
 | Activity & consistency | 15% | Active days, active weeks, volume and recency over the last 12 months |
-| Impact & reach | 18% | Stars earned, forks, repos with 10+ stars; followers only 5% of this section |
-| Engineering breadth | 10% | Languages, number of substantial projects, repos contributed to this year |
+| Impact & reach | 12% | Stars earned, forks, repos with 10+ stars; followers only 5% of this section |
+| Engineering breadth | 8% | Languages, number of substantial projects, repos contributed to this year |
 
 Each profile also splits the last 12 months' commits and PRs into **own & team work** and **outside contribution**, and every merged PR elsewhere is labelled Outside, Team or Farm. The profile is labelled **Builder-led**, **Balanced** or **Contributor-led**. The full specification is on the `/method` page.
 

@@ -810,8 +810,8 @@ tr:nth-child(-n + 3) .rank {
 /* five-dimension strip: small multiples, one labelled column header */
 .strip {
   display: grid;
-  grid-template-columns: repeat(5, 22px);
-  gap: 5px;
+  grid-template-columns: repeat(6, 18px);
+  gap: 4px;
   align-items: end;
   height: 28px;
 }
@@ -837,9 +837,9 @@ tr:nth-child(-n + 3) .rank {
 }
 .strip-legend {
   display: grid;
-  grid-template-columns: repeat(5, 22px);
-  gap: 5px;
-  font: 500 9.5px/1 var(--font-mono);
+  grid-template-columns: repeat(6, 18px);
+  gap: 4px;
+  font: 500 8.5px/1 var(--font-mono);
   letter-spacing: 0.04em;
   color: var(--ink-3);
   text-align: center;

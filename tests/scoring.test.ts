@@ -393,3 +393,25 @@ describe("issues and reviews", () => {
     expect(value(outside)).toBeGreaterThan(0.9);
   });
 });
+
+describe("build depth", () => {
+  const depthOf = (e: ProfileEvidence) => assess(e, NOW).dimensions.find((d) => d.key === "depth")!;
+
+  it("rewards projects the person built themselves over projects they barely touched", () => {
+    const builder = evidence({
+      inspected: [1, 2, 3, 4, 5].map((i) => repo({ nameWithOwner: `dev/p${i}`, commitsTotal: 300, commitsByOwner: 300, authoredWeeks: 30 })),
+    });
+    const passenger = evidence({
+      inspected: [1, 2, 3, 4, 5].map((i) =>
+        repo({ nameWithOwner: `org/p${i}`, owned: false, commitsTotal: 1000, commitsByOwner: 150, authoredWeeks: 4 }),
+      ),
+    });
+    expect(depthOf(builder).score).toBeGreaterThan(90);
+    expect(depthOf(passenger).score).toBeLessThan(depthOf(builder).score / 2);
+  });
+
+  it("counts lead-built projects only with real volume", () => {
+    const tiny = evidence({ inspected: [1, 2, 3].map((i) => repo({ nameWithOwner: `dev/t${i}`, commitsTotal: 5, commitsByOwner: 5 })) });
+    expect(depthOf(tiny).factors.find((f) => f.key === "led")!.value).toBe(0);
+  });
+});

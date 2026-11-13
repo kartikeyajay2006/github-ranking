@@ -23,6 +23,10 @@ export interface RepoEvidence {
   hasDocs: boolean;
   commitsTotal: number;
   commitsByOwner: number;
+  /** Distinct weeks with commits by this person, and the span they cover (from their 100 most recent commits). */
+  authoredWeeks?: number;
+  authoredFirst?: string | null;
+  authoredLast?: string | null;
   /** False for organisation or teammates' repositories the person substantially worked on. Absent on older snapshots (= owned). */
   owned?: boolean;
   /** "history": counted on the default branch. "last-year": history too large to walk, so last-12-month commits were used. */
@@ -120,7 +124,7 @@ export interface Factor {
   evidence: string;
 }
 
-export type DimensionKey = "projects" | "opensource" | "activity" | "impact" | "breadth";
+export type DimensionKey = "projects" | "depth" | "opensource" | "activity" | "impact" | "breadth";
 
 export interface Dimension {
   key: DimensionKey;
@@ -156,6 +160,8 @@ export interface RepoAssessment {
   owned: boolean;
   /** Share of the default branch's commits authored by this person (null when unknown). */
   authorship: number | null;
+  /** Distinct weeks with commits by this person (from their 100 most recent), when known. */
+  activeWeeks: number | null;
 }
 
 export interface PullBreakdown {

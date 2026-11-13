@@ -1,7 +1,7 @@
 import type { Band as BandName, Dimension } from "@/lib/types";
 
 const BANDS: BandName[] = ["Emerging", "Developing", "Proficient", "Strong", "Exceptional"];
-const SHORT: Record<string, string> = { projects: "PRJ", opensource: "OSS", activity: "ACT", impact: "IMP", breadth: "BRD" };
+const SHORT: Record<string, string> = { projects: "PRJ", depth: "DEP", opensource: "OSS", activity: "ACT", impact: "IMP", breadth: "BRD" };
 
 export const fmt = (n: number, digits = 0) =>
   n.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });

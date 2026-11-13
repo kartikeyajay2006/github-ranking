@@ -14,7 +14,7 @@ import type {
 } from "../types";
 import { DAY, clamp01, daysSince, logRef, plural, ramp, round1 } from "./curves";
 
-export const METHODOLOGY_VERSION = "2026.11-r3";
+export const METHODOLOGY_VERSION = "2026.11-r4";
 
 /**
  * Every threshold below is a fixed constant. Nothing is normalised against a cohort, so an
@@ -22,15 +22,17 @@ export const METHODOLOGY_VERSION = "2026.11-r3";
  * re-analysing anyone else can never move their score.
  */
 export const DIMENSION_WEIGHTS: Record<DimensionKey, number> = {
-  projects: 0.32,
-  opensource: 0.25,
+  projects: 0.3,
+  depth: 0.2,
+  opensource: 0.15,
   activity: 0.15,
-  impact: 0.18,
-  breadth: 0.1,
+  impact: 0.12,
+  breadth: 0.08,
 };
 
 export const DIMENSION_LABELS: Record<DimensionKey, string> = {
   projects: "Project quality",
+  depth: "Build depth",
   opensource: "Open-source contribution",
   activity: "Activity & consistency",
   impact: "Impact & reach",
@@ -200,6 +202,7 @@ function projects(ev: ProfileEvidence, now: number) {
     commitsByOwner: ownerCommits(repo).count,
     owned: isOwned(repo),
     authorship: share,
+    activeWeeks: repo.authoredWeeks ?? null,
   }));
 
   return { dim: dimension("projects", factors), repos, inferred: top.some((r) => ownerCommits(r).inferred) };
@@ -400,6 +403,65 @@ function impact(ev: ProfileEvidence) {
   return dimension("impact", factors);
 }
 
+/** Assumed share when authorship can't be measured on a repository the person owns (unlinked e-mail, history too large). */
+const UNKNOWN_SHARE = 0.75;
+
+/**
+ * How much the person personally built: commits they authored across the projects credited to them,
+ * how many projects they led (wrote at least half of, with real volume), how long they stayed with
+ * their main projects week after week, and how much of their best work is their own.
+ */
+function depth(repos: RepoAssessment[]) {
+  const credited = repos.filter((r) => (r.authorship ?? UNKNOWN_SHARE) >= 0.25);
+  const authored = credited.reduce((s, r) => s + r.commitsByOwner, 0);
+  const led = credited.filter((r) => (r.authorship ?? UNKNOWN_SHARE) >= 0.5 && r.commitsByOwner >= 40);
+  const weeks = credited
+    .map((r) => r.activeWeeks ?? Math.min(52, Math.round(r.commitsByOwner / 4)))
+    .sort((a, b) => b - a)
+    .slice(0, 2);
+  const sustained = weeks.length ? weeks.reduce((a, b) => a + b, 0) / weeks.length : 0;
+  const top = repos.filter((r) => r.portfolioWeight > 0);
+  const totalWeight = top.reduce((s, r) => s + r.portfolioWeight, 0);
+  const share = totalWeight ? top.reduce((s, r) => s + r.portfolioWeight * (r.authorship ?? UNKNOWN_SHARE), 0) / totalWeight : 0;
+
+  const factors: Factor[] = [
+    {
+      key: "authored",
+      label: "Authored volume",
+      value: logRef(authored, 1500),
+      weight: 0.3,
+      evidence: `${plural(authored, "commit")} written across ${plural(credited.length, "credited project")}`,
+    },
+    {
+      key: "led",
+      label: "Lead-built projects",
+      value: ramp(led.length, 5),
+      weight: 0.3,
+      evidence: led.length
+        ? `${plural(led.length, "project")} where they wrote half or more, with 40+ commits: ${led
+            .slice(0, 3)
+            .map((r) => r.nameWithOwner.split("/")[1])
+            .join(", ")}${led.length > 3 ? "…" : ""}`
+        : "No project where they wrote half or more with 40+ commits",
+    },
+    {
+      key: "sustained",
+      label: "Sustained involvement",
+      value: ramp(sustained, 26),
+      weight: 0.25,
+      evidence: weeks.length ? `Committed in ${weeks.join(" and ")} distinct weeks on their two longest-running projects` : "—",
+    },
+    {
+      key: "share",
+      label: "Authorship share",
+      value: share,
+      weight: 0.15,
+      evidence: top.length ? `${Math.round(share * 100)}% of their top ${top.length} projects is their own code` : "—",
+    },
+  ];
+  return dimension("depth", factors);
+}
+
 function breadth(ev: ProfileEvidence, repos: RepoAssessment[]) {
   const languages = new Set(ev.repos.filter((r) => r.language && (r.diskKb >= 100 || r.stars >= 1)).map((r) => r.language!));
   const substantial = repos.filter((r) => r.quality >= 45).length;
@@ -457,7 +519,7 @@ export function orientationFor(own: number, external: number): Orientation {
 export function assess(ev: ProfileEvidence, now = Date.parse(ev.fetchedAt), collectionNotes: string[] = []): Assessment {
   const proj = projects(ev, now);
   const pulls = pullBreakdown(ev);
-  const dims = [proj.dim, opensource(ev, pulls), activity(ev, now), impact(ev), breadth(ev, proj.repos)];
+  const dims = [proj.dim, depth(proj.repos), opensource(ev, pulls), activity(ev, now), impact(ev), breadth(ev, proj.repos)];
   const total = round1(dims.reduce((s, d) => s + d.score * d.weight, 0));
 
   const { own, external } = workSplit(ev);

@@ -8,6 +8,7 @@ const SECTIONS = [
   ["principles", "Principles"],
   ["dimensions", "Dimensions"],
   ["projects", "Project quality"],
+  ["depth", "Build depth"],
   ["opensource", "Open-source contribution"],
   ["activity", "Activity & consistency"],
   ["impact", "Impact & reach"],
@@ -86,6 +87,11 @@ export default function MethodPage() {
                 <td>Well-engineered, documented, maintained and adopted original work</td>
               </tr>
               <tr>
+                <td>{DIMENSION_LABELS.depth}</td>
+                <td className="num">{pct(DIMENSION_WEIGHTS.depth)}</td>
+                <td>How much of their projects the person personally wrote, and how long they kept building them</td>
+              </tr>
+              <tr>
                 <td>{DIMENSION_LABELS.opensource}</td>
                 <td className="num">{pct(DIMENSION_WEIGHTS.opensource)}</td>
                 <td>Work accepted into repositories the person does not own</td>
@@ -152,6 +158,37 @@ export default function MethodPage() {
                 <td>Adoption</td>
                 <td className="num">24</td>
                 <td>Stars (18, log curve to 1,000), forks (6, log curve to 150)</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <h2 id="depth">Build depth</h2>
+          <p>
+            Project quality asks how good the projects are; build depth asks how much of them this person built. It uses the projects credited under project
+            quality (owned and team repositories) where they wrote at least a quarter of the commits, or own repositories where authorship can&rsquo;t be
+            measured.
+          </p>
+          <table className="spec">
+            <tbody>
+              <tr>
+                <td>Authored volume</td>
+                <td className="num">30%</td>
+                <td>Commits the person wrote across those projects; log curve to 1,500</td>
+              </tr>
+              <tr>
+                <td>Lead-built projects</td>
+                <td className="num">30%</td>
+                <td>Projects where they wrote half or more of the commits, with at least 40 of them; full at 5</td>
+              </tr>
+              <tr>
+                <td>Sustained involvement</td>
+                <td className="num">25%</td>
+                <td>Distinct weeks with commits on their two longest-running projects (from up to 500 of their commits on each of their three busiest projects, 100 elsewhere); full at 26 weeks</td>
+              </tr>
+              <tr>
+                <td>Authorship share</td>
+                <td className="num">15%</td>
+                <td>Portfolio-weighted share of their top five projects that is their own code (75% assumed where it can&rsquo;t be measured)</td>
               </tr>
             </tbody>
           </table>

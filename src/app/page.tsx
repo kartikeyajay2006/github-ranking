@@ -17,8 +17,8 @@ export default async function IndividualsPage() {
           <p className="kicker">Individual standings</p>
           <h1>Who builds, who contributes, and how well.</h1>
           <p className="lede">
-            Each developer is scored out of 100 on their public GitHub evidence alone: the quality of their own projects, merged work in other people&rsquo;s
-            repositories, consistency, reach and breadth.
+            Each developer is scored out of 100 on their public GitHub evidence alone. Half the score is building: the quality of their projects
+            and how much of them they wrote themselves. The rest is peer-reviewed open-source work, consistency, reach and breadth.
           </p>
         </div>
         <dl className="stats">
@@ -105,7 +105,7 @@ export default async function IndividualsPage() {
           </table>
           <div className="legend-row">
             <span className="key">
-              PRJ project quality · OSS open-source contribution · ACT activity · IMP impact · BRD breadth
+              PRJ project quality · DEP build depth · OSS open-source contribution · ACT activity · IMP impact · BRD breadth
             </span>
             <span className="key">
               <i style={{ background: "var(--accent)" }} /> own &amp; team work

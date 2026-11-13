@@ -118,7 +118,14 @@ const REPO_FRAGMENT = /* GraphQL */ `
 /** Commit counting is isolated because walking history on very large repositories can time out on GitHub's side. */
 const COMMITS_FRAGMENT = /* GraphQL */ `
   fragment Commits on Repository {
-    defaultBranchRef { target { ... on Commit { all: history { totalCount } mine: history(author: { id: $authorId }) { totalCount } } } }
+    defaultBranchRef {
+      target {
+        ... on Commit {
+          all: history { totalCount }
+          mine: history(author: { id: $authorId }, first: 100) { totalCount pageInfo { hasNextPage endCursor } nodes { committedDate } }
+        }
+      }
+    }
   }
 `;
 
@@ -143,7 +150,52 @@ interface InspectNode {
 }
 
 interface CommitsNode {
-  defaultBranchRef: { target: { all?: { totalCount: number }; mine?: { totalCount: number } } } | null;
+  defaultBranchRef: { target: { all?: { totalCount: number }; mine?: { totalCount: number; pageInfo?: { hasNextPage: boolean; endCursor: string | null }; nodes?: { committedDate: string }[] } } } | null;
+}
+
+const MORE_COMMITS = /* GraphQL */ `
+  query MoreCommits($owner: String!, $name: String!, $authorId: ID!, $after: String!) {
+    repository(owner: $owner, name: $name) {
+      defaultBranchRef { target { ... on Commit {
+        history(author: { id: $authorId }, first: 100, after: $after) { pageInfo { hasNextPage endCursor } nodes { committedDate } }
+      } } }
+    }
+  }
+`;
+
+interface MoreCommitsData {
+  repository: { defaultBranchRef: { target: { history?: { pageInfo: { hasNextPage: boolean; endCursor: string | null }; nodes: { committedDate: string }[] } } } | null } | null;
+}
+
+/** Commit dates beyond the first 100 for a person's busiest projects, so heavy committers' involvement isn't truncated to their last few weeks. */
+const DEEP_RHYTHM_REPOS = 3;
+const DEEP_RHYTHM_PAGES = 4;
+
+async function moreCommitDates(repo: string, authorId: string, cursor: string): Promise<string[]> {
+  const [owner, name] = repo.split("/");
+  const dates: string[] = [];
+  let after: string | null = cursor;
+  for (let page = 0; page < DEEP_RHYTHM_PAGES && after; page++) {
+    try {
+      const res: { data: MoreCommitsData } = await graphql<MoreCommitsData>(MORE_COMMITS, { owner, name, authorId, after }, { timeoutMs: 10_000, retries: 0 });
+      const h: NonNullable<NonNullable<MoreCommitsData["repository"]>["defaultBranchRef"]>["target"]["history"] = res.data.repository?.defaultBranchRef?.target.history;
+      if (!h) break;
+      dates.push(...h.nodes.map((n: { committedDate: string }) => n.committedDate));
+      after = h.pageInfo.hasNextPage ? h.pageInfo.endCursor : null;
+    } catch (err) {
+      if (err instanceof GitHubError && err.kind === "upstream") break;
+      throw err;
+    }
+  }
+  return dates;
+}
+
+/** Distinct calendar weeks and first/last dates among a person's commits (the 100 most recent). */
+export function commitRhythm(dates: string[]): { weeks: number; first: string | null; last: string | null } {
+  if (!dates.length) return { weeks: 0, first: null, last: null };
+  const sorted = [...dates].sort();
+  const weeks = new Set(sorted.map((d) => Math.floor(Date.parse(d) / (7 * 86_400_000))));
+  return { weeks: weeks.size, first: sorted[0]!, last: sorted.at(-1)! };
 }
 
 const TEST_DIRS = new Set(["test", "tests", "__tests__", "spec", "specs", "e2e", "cypress", "playwright", "testing", "test-suite"]);
@@ -280,7 +332,8 @@ async function inspectRepos(
       `Commit history for ${commitsUnavailable.join(", ")} is too large to count; the owner's last-12-month commits there were used instead.`,
     );
 
-  return names.flatMap((name) => {
+  const pending: { repo: RepoEvidence; dates: string[]; cursor: string }[] = [];
+  const result = names.flatMap((name) => {
     const node = detail.get(name);
     if (!node) return [];
     const repo = readRepo(node);
@@ -288,6 +341,12 @@ async function inspectRepos(
     if (history?.all) {
       repo.commitsTotal = history.all.totalCount;
       repo.commitsByOwner = history.mine?.totalCount ?? 0;
+      const dates = (history.mine?.nodes ?? []).map((n) => n.committedDate);
+      const rhythm = commitRhythm(dates);
+      repo.authoredWeeks = rhythm.weeks;
+      repo.authoredFirst = rhythm.first;
+      repo.authoredLast = rhythm.last;
+      if (history.mine?.pageInfo?.hasNextPage && history.mine.pageInfo.endCursor) pending.push({ repo, dates, cursor: history.mine.pageInfo.endCursor });
     } else {
       const recent = yearCommits.get(name.toLowerCase()) ?? 0;
       repo.commitsTotal = recent;
@@ -296,6 +355,18 @@ async function inspectRepos(
     }
     return [repo];
   });
+
+  // Read deeper into the history of the person's busiest projects.
+  const busiest = pending.sort((a, b) => b.repo.commitsByOwner - a.repo.commitsByOwner).slice(0, DEEP_RHYTHM_REPOS);
+  await Promise.all(
+    busiest.map(async (p) => {
+      const rhythm = commitRhythm([...p.dates, ...(await moreCommitDates(p.repo.nameWithOwner, authorId, p.cursor))]);
+      p.repo.authoredWeeks = rhythm.weeks;
+      p.repo.authoredFirst = rhythm.first;
+      p.repo.authoredLast = rhythm.last;
+    }),
+  );
+  return result;
 }
 
 /** Ranks scanned repositories by how likely they are to be the account's most representative work. */

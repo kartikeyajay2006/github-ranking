@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { inspectionCandidates, normaliseLogin, readRepo, teamRepoCandidates } from "@/lib/github/collect";
+import { commitRhythm, inspectionCandidates, normaliseLogin, readRepo, teamRepoCandidates } from "@/lib/github/collect";
 import { parseLogins } from "@/lib/analyze";
 
 describe("normaliseLogin", () => {
@@ -115,5 +115,15 @@ describe("teamRepoCandidates", () => {
       ]),
     );
     expect(picks).toEqual(["company/app", "org/startup", "mate/hack"]);
+  });
+});
+
+describe("commitRhythm", () => {
+  it("counts distinct weeks and the span of commits", () => {
+    const r = commitRhythm(["2026-01-05T10:00:00Z", "2026-01-06T10:00:00Z", "2026-03-02T10:00:00Z", "2025-12-01T10:00:00Z"]);
+    expect(r.weeks).toBe(3);
+    expect(r.first).toBe("2025-12-01T10:00:00Z");
+    expect(r.last).toBe("2026-03-02T10:00:00Z");
+    expect(commitRhythm([])).toEqual({ weeks: 0, first: null, last: null });
   });
 });
