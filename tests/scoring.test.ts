@@ -1,6 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { logRef, ramp } from "@/lib/scoring/curves";
-import { DIMENSION_WEIGHTS, PORTFOLIO_WEIGHTS, REPO_GROUP_MAX, assess, bandFor, orientationFor, prWeight, repoGroups } from "@/lib/scoring/individual";
+import {
+  DIMENSION_WEIGHTS,
+  PORTFOLIO_WEIGHTS,
+  REPO_GROUP_MAX,
+  assess,
+  authorship,
+  authorshipFactor,
+  bandFor,
+  classifyPull,
+  orientationFor,
+  prSubstance,
+  prWeight,
+  repoGroups,
+  workSplit,
+} from "@/lib/scoring/individual";
 import { assessTeam, teamWeights } from "@/lib/scoring/team";
 import type { ProfileEvidence, RepoEvidence } from "@/lib/types";
 
@@ -263,5 +277,102 @@ describe("team assessment", () => {
     )!;
     expect(t.pending).toEqual(["x"]);
     expect(t.total).toBe(strong.total);
+  });
+});
+
+describe("pull request classification", () => {
+  const pr = (o: Partial<import("@/lib/types").ExternalPullRequest>) => ({ repo: "big/framework", stars: 9000, mergedAt: daysAgo(3), lines: 200, association: "CONTRIBUTOR", selfMerged: false, ...o });
+
+  it("counts only peer-reviewed outside work as open source", () => {
+    expect(classifyPull(pr({}))).toBe("outside");
+    expect(classifyPull(pr({ association: "FIRST_TIME_CONTRIBUTOR" }))).toBe("outside");
+    expect(classifyPull(pr({ association: "MEMBER" }))).toBe("team");
+    expect(classifyPull(pr({ association: "COLLABORATOR" }))).toBe("team");
+    expect(classifyPull(pr({ selfMerged: true }))).toBe("team");
+  });
+
+  it("recognises contribution farms", () => {
+    for (const repo of ["x/Hacktoberfest-2024", "x/first-contributions", "x/Code-Contribution", "x/Leetcode-Questions", "x/HacktoberWall"])
+      expect(classifyPull(pr({ repo }))).toBe("farm");
+    expect(classifyPull(pr({ repo: "sktime/sktime" }))).toBe("outside");
+  });
+
+  it("weights larger changes more", () => {
+    expect(prSubstance(1)).toBeLessThan(0.5);
+    expect(prSubstance(150)).toBeCloseTo(1);
+    expect(prSubstance(undefined)).toBe(1);
+  });
+
+  const base = evidence();
+  const teamOnly = evidence({
+    external: { merged: 30, closedUnmerged: 0, open: 0, issues: 0, sample: Array.from({ length: 30 }, () => pr({ repo: "myorg/startup", stars: 50, association: "MEMBER", selfMerged: true })) },
+  });
+  const outsideOnly = evidence({
+    external: { merged: 30, closedUnmerged: 0, open: 0, issues: 0, sample: Array.from({ length: 30 }, (_, i) => pr({ repo: `org${i % 6}/lib`, stars: 5000 })) },
+  });
+  const farmOnly = evidence({
+    external: { merged: 30, closedUnmerged: 0, open: 0, issues: 0, sample: Array.from({ length: 30 }, () => pr({ repo: "x/hacktoberfest-2025", stars: 300, lines: 30 })) },
+  });
+  const oss = (e: ProfileEvidence) => assess(e, NOW).dimensions.find((d) => d.key === "opensource")!;
+
+  it("gives team PRs no open-source credit and farms very little", () => {
+    expect(oss(teamOnly).factors.find((f) => f.key === "merged")!.value).toBe(0);
+    expect(oss(farmOnly).score).toBeLessThan(oss(outsideOnly).score / 2);
+    expect(oss(outsideOnly).score).toBeGreaterThan(oss(base).score);
+  });
+
+  it("reports the breakdown", () => {
+    const p = assess(teamOnly, NOW).pulls!;
+    expect(p).toMatchObject({ outside: 0, team: 30, farm: 0, selfMerged: 30 });
+  });
+});
+
+describe("authorship", () => {
+  it("credits repositories by the share the person wrote", () => {
+    expect(authorshipFactor(null)).toBe(1);
+    expect(authorshipFactor(0.5)).toBe(1);
+    expect(authorshipFactor(0.25)).toBeCloseTo(0.7);
+    expect(authorshipFactor(0)).toBeCloseTo(0.4);
+    expect(authorship(repo({ commitsTotal: 200, commitsByOwner: 50 }))).toBeCloseTo(0.25);
+    expect(authorship(repo({ commitsTotal: 200, commitsByOwner: 0 }))).toBeNull(); // owned, unlinked e-mail
+  });
+
+  it("counts team repositories by authorship and drops ones barely touched", () => {
+    const team = repo({ nameWithOwner: "org/product", owned: false, stars: 400, commitsTotal: 300, commitsByOwner: 150 });
+    const touched = repo({ nameWithOwner: "org/other", owned: false, stars: 900, commitsTotal: 1000, commitsByOwner: 20 });
+    const a = assess(evidence({ inspected: [...evidence().inspected, team, touched] }), NOW);
+    expect(a.repos.find((r) => r.nameWithOwner === "org/product")).toMatchObject({ owned: false, authorship: 0.5 });
+    expect(a.repos.some((r) => r.nameWithOwner === "org/other")).toBe(false);
+  });
+
+  it("a solo author outranks a light co-author on an otherwise identical repository", () => {
+    const solo = assess(evidence({ inspected: [repo({ commitsTotal: 100, commitsByOwner: 100 })] }), NOW);
+    const light = assess(evidence({ inspected: [repo({ commitsTotal: 400, commitsByOwner: 100 })] }), NOW);
+    expect(solo.repos[0]!.quality).toBeGreaterThan(light.repos[0]!.quality);
+  });
+});
+
+describe("work split", () => {
+  it("treats insider repositories as own & team work", () => {
+    const e = evidence({
+      year: {
+        ...evidence().year,
+        byRepo: [
+          { repo: "dev/a", owner: "dev", commits: 50, pulls: 0 },
+          { repo: "myorg/startup", owner: "myorg", commits: 40, pulls: 10 },
+          { repo: "big/framework", owner: "big", commits: 5, pulls: 5 },
+        ],
+      },
+      external: { merged: 2, closedUnmerged: 0, open: 0, issues: 0, sample: [{ repo: "myorg/startup", stars: 3, mergedAt: daysAgo(2), association: "MEMBER", selfMerged: true, lines: 50 }] },
+    });
+    expect(workSplit(e)).toEqual({ own: 100, external: 10 });
+  });
+});
+
+describe("followers", () => {
+  it("carry at most 5% of impact", () => {
+    const quiet = assess(evidence({ followers: 0 }), NOW).total;
+    const popular = assess(evidence({ followers: 100_000 }), NOW).total;
+    expect(popular - quiet).toBeLessThanOrEqual(DIMENSION_WEIGHTS.impact * 5 + 0.1);
   });
 });

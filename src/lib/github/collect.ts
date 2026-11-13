@@ -322,45 +322,130 @@ export function inspectionCandidates(login: string, repos: RepoSummary[], limit 
 
 /* --------------------------------------------------------------- external --------------------------------------------------------------- */
 
-const EXTERNAL = /* GraphQL */ `
-  query External($merged: String!, $closed: String!, $open: String!, $issues: String!) {
-    merged: search(query: $merged, type: ISSUE, first: 50) {
-      issueCount
-      nodes { ... on PullRequest { mergedAt repository { nameWithOwner stargazerCount } } }
-    }
+const EXTERNAL_COUNTS = /* GraphQL */ `
+  query ExternalCounts($merged: String!, $closed: String!, $open: String!, $issues: String!) {
+    merged: search(query: $merged, type: ISSUE, first: 1) { issueCount }
     closed: search(query: $closed, type: ISSUE, first: 1) { issueCount }
     open: search(query: $open, type: ISSUE, first: 1) { issueCount }
     issues: search(query: $issues, type: ISSUE, first: 1) { issueCount }
   }
 `;
 
-interface ExternalData {
-  merged: { issueCount: number; nodes: ({ mergedAt?: string; repository?: { nameWithOwner: string; stargazerCount: number } } | null)[] };
+const MERGED_PULLS = /* GraphQL */ `
+  query MergedPulls($q: String!, $first: Int!, $after: String) {
+    search(query: $q, type: ISSUE, first: $first, after: $after) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        ... on PullRequest {
+          mergedAt additions deletions authorAssociation
+          mergedBy { login }
+          repository { nameWithOwner stargazerCount }
+        }
+      }
+    }
+  }
+`;
+
+interface CountsData {
+  merged: { issueCount: number };
   closed: { issueCount: number };
   open: { issueCount: number };
   issues: { issueCount: number };
 }
 
+interface PullNode {
+  mergedAt?: string;
+  additions?: number;
+  deletions?: number;
+  authorAssociation?: string;
+  mergedBy?: { login: string } | null;
+  repository?: { nameWithOwner: string; stargazerCount: number };
+}
+
+interface PullsData {
+  search: { pageInfo: { hasNextPage: boolean; endCursor: string | null }; nodes: (PullNode | null)[] };
+}
+
+const PULL_PAGES = 5;
+const PULL_PAGE_SIZE = 40;
+
+/** Every merged pull request outside the account's own repositories, newest first, up to 200, with who merged it and the author's role. */
+async function mergedPulls(login: string): Promise<ExternalPullRequest[]> {
+  const q = `is:pr is:merged author:${login} -user:${login} sort:created-desc`;
+  const out: ExternalPullRequest[] = [];
+  let after: string | null = null;
+  for (let page = 0; page < PULL_PAGES; page++) {
+    let res: { data: PullsData };
+    try {
+      res = await graphql<PullsData>(MERGED_PULLS, { q, first: PULL_PAGE_SIZE, after });
+    } catch (err) {
+      if (!(err instanceof GitHubError && err.kind === "upstream")) throw err;
+      res = await graphql<PullsData>(MERGED_PULLS, { q, first: PULL_PAGE_SIZE / 2, after });
+    }
+    for (const n of res.data.search.nodes) {
+      if (!n?.repository || !n.mergedAt) continue;
+      out.push({
+        repo: n.repository.nameWithOwner,
+        stars: n.repository.stargazerCount,
+        mergedAt: n.mergedAt,
+        lines: (n.additions ?? 0) + (n.deletions ?? 0),
+        association: n.authorAssociation ?? "NONE",
+        selfMerged: !!n.mergedBy && n.mergedBy.login.toLowerCase() === login.toLowerCase(),
+      });
+    }
+    if (!res.data.search.pageInfo.hasNextPage) break;
+    after = res.data.search.pageInfo.endCursor;
+  }
+  return out;
+}
+
 async function collectExternal(login: string): Promise<ProfileEvidence["external"]> {
-  // "-user:" excludes every repository owned by the account itself, leaving genuine outside work.
+  // "-user:" excludes every repository owned by the account itself.
   const scope = `author:${login} -user:${login}`;
-  const vars = {
-    merged: `is:pr is:merged ${scope}`,
-    closed: `is:pr is:closed is:unmerged ${scope}`,
-    open: `is:pr is:open archived:false ${scope}`,
-    issues: `is:issue ${scope}`,
-  };
-  const { data } = await graphql<ExternalData>(EXTERNAL, vars);
-  const sample: ExternalPullRequest[] = data.merged.nodes
-    .filter((n): n is { mergedAt: string; repository: { nameWithOwner: string; stargazerCount: number } } => !!n?.repository && !!n.mergedAt)
-    .map((n) => ({ repo: n.repository.nameWithOwner, stars: n.repository.stargazerCount, mergedAt: n.mergedAt }));
+  const [{ data }, sample] = await Promise.all([
+    graphql<CountsData>(EXTERNAL_COUNTS, {
+      merged: `is:pr is:merged ${scope}`,
+      closed: `is:pr is:closed is:unmerged ${scope}`,
+      open: `is:pr is:open archived:false ${scope}`,
+      issues: `is:issue ${scope}`,
+    }),
+    mergedPulls(login),
+  ]);
   return {
-    merged: data.merged.issueCount,
+    merged: Math.max(data.merged.issueCount, sample.length),
     closedUnmerged: data.closed.issueCount,
     open: data.open.issueCount,
     issues: data.issues.issueCount,
     sample,
   };
+}
+
+const INSIDER = new Set(["OWNER", "MEMBER", "COLLABORATOR"]);
+const TEAM_REPO_LIMIT = 8;
+
+/**
+ * Organisation and teammates' repositories the person built from the inside: they're a member or
+ * collaborator there, merge their own PRs there, or commit there heavily without going through
+ * outside review. These are inspected as projects (credited by authorship share), not as open source.
+ */
+export function teamRepoCandidates(login: string, pulls: ExternalPullRequest[], yearCommits: Map<string, number>, limit = TEAM_REPO_LIMIT): string[] {
+  const insider = new Map<string, number>();
+  const outside = new Set<string>();
+  for (const p of pulls) {
+    if (INSIDER.has(p.association ?? "") || p.selfMerged) insider.set(p.repo, (insider.get(p.repo) ?? 0) + 1);
+    else outside.add(p.repo.toLowerCase());
+  }
+  const weight = new Map<string, number>();
+  for (const [repo, n] of insider) if (n >= 2) weight.set(repo, n * 5);
+  for (const [repo, n] of yearCommits) {
+    if (repo.split("/")[0] === login.toLowerCase() || outside.has(repo) || n < 15) continue;
+    const key = [...insider.keys()].find((r) => r.toLowerCase() === repo) ?? repo;
+    weight.set(key, (weight.get(key) ?? 0) + n);
+  }
+  return [...weight.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit)
+    .map(([repo]) => repo);
 }
 
 /* ---------------------------------------------------------------- collect ---------------------------------------------------------------- */
@@ -423,7 +508,19 @@ export async function collectProfile(rawLogin: string): Promise<{ evidence: Prof
   const cc = user.contributionsCollection;
   const yearCommits = new Map(cc.commitContributionsByRepository.map((r) => [r.repository.nameWithOwner.toLowerCase(), r.contributions.totalCount]));
   const sizes = new Map(scan.repos.map((r) => [r.nameWithOwner, r.diskKb]));
-  const inspected = await inspectRepos(inspectionCandidates(user.login, scan.repos), sizes, user.id, yearCommits, notes);
+  const owned = inspectionCandidates(user.login, scan.repos);
+  const team = teamRepoCandidates(user.login, external.sample, yearCommits).filter((r) => !owned.includes(r));
+  const inspected = await inspectRepos([...owned, ...team], sizes, user.id, yearCommits, notes);
+  for (const repo of inspected) repo.owned = repo.nameWithOwner.split("/")[0]!.toLowerCase() === user.login.toLowerCase();
+
+  const byRepo = new Map<string, { repo: string; owner: string; commits: number; pulls: number }>();
+  const entry = (r: ByRepo) => {
+    const key = r.repository.nameWithOwner.toLowerCase();
+    if (!byRepo.has(key)) byRepo.set(key, { repo: r.repository.nameWithOwner, owner: r.repository.owner.login, commits: 0, pulls: 0 });
+    return byRepo.get(key)!;
+  };
+  for (const r of cc.commitContributionsByRepository) entry(r).commits += r.contributions.totalCount;
+  for (const r of cc.pullRequestContributionsByRepository) entry(r).pulls += r.contributions.totalCount;
 
   const calendar: ContributionDay[] = cc.contributionCalendar.weeks.flatMap((w) =>
     w.contributionDays.map((d) => ({ date: d.date, count: d.contributionCount })),
@@ -472,6 +569,7 @@ export async function collectProfile(rawLogin: string): Promise<{ evidence: Prof
         reviewsExternal: reviews.external,
         issuesExternal: issues.external,
         reposTouched: touched.size,
+        byRepo: [...byRepo.values()],
       },
       external,
       fetchedAt: to.toISOString(),

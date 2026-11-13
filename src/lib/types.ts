@@ -23,6 +23,8 @@ export interface RepoEvidence {
   hasDocs: boolean;
   commitsTotal: number;
   commitsByOwner: number;
+  /** False for organisation or teammates' repositories the person substantially worked on. Absent on older snapshots (= owned). */
+  owned?: boolean;
   /** "history": counted on the default branch. "last-year": history too large to walk, so last-12-month commits were used. */
   commitsSource?: "history" | "last-year";
 }
@@ -42,7 +44,15 @@ export interface ExternalPullRequest {
   repo: string;
   stars: number;
   mergedAt: string;
+  /** Lines added + deleted. */
+  lines?: number;
+  /** GitHub's author association on that repository: OWNER, MEMBER, COLLABORATOR, CONTRIBUTOR, FIRST_TIME_CONTRIBUTOR, NONE… */
+  association?: string;
+  /** True when the author merged their own pull request. */
+  selfMerged?: boolean;
 }
+
+export type PullClass = "outside" | "team" | "farm";
 
 export interface ContributionDay {
   date: string;
@@ -81,12 +91,15 @@ export interface ProfileEvidence {
     reviewsExternal: number;
     issuesExternal: number;
     reposTouched: number;
+    /** Commits and pull requests per repository over the window. */
+    byRepo?: { repo: string; owner: string; commits: number; pulls: number }[];
   };
   external: {
     merged: number;
     closedUnmerged: number;
     open: number;
     issues: number;
+    /** Merged pull requests outside owned repositories, most recent first (up to 200). */
     sample: ExternalPullRequest[];
   };
   fetchedAt: string;
@@ -136,6 +149,19 @@ export interface RepoAssessment {
     maintained: boolean;
   };
   commitsByOwner: number;
+  owned: boolean;
+  /** Share of the default branch's commits authored by this person (null when unknown). */
+  authorship: number | null;
+}
+
+export interface PullBreakdown {
+  total: number;
+  classified: number;
+  outside: number;
+  team: number;
+  farm: number;
+  selfMerged: number;
+  repos: { repo: string; stars: number; count: number; kind: PullClass; last: string; lines: number }[];
 }
 
 export type Band = "Exceptional" | "Strong" | "Proficient" | "Developing" | "Emerging";
@@ -151,6 +177,7 @@ export interface Assessment {
   /** Last-12-month share of commits + pull requests that went to repositories the account does not own. */
   split: { own: number; external: number; externalShare: number };
   repos: RepoAssessment[];
+  pulls?: PullBreakdown;
   notes: string[];
 }
 

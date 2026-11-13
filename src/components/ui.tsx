@@ -69,14 +69,14 @@ export function Split({ own, external, i = 0 }: { own: number; external: number;
     );
   const ext = external / total;
   return (
-    <span className="split" style={{ ["--i" as string]: i }} title={`Own repositories ${fmt(own)} · Others' repositories ${fmt(external)} (commits + PRs, last 12 months)`}>
+    <span className="split" style={{ ["--i" as string]: i }} title={`Own & team work ${fmt(own)} · Outside contribution ${fmt(external)} (commits + PRs, last 12 months)`}>
       <span className="bar">
         {own > 0 && <i className="own" style={{ flex: own }} />}
         {external > 0 && <i className="ext" style={{ flex: external }} />}
       </span>
       <span className="caption">
         <span>own {pct(1 - ext)}</span>
-        <span>ext {pct(ext)}</span>
+        <span>outside {pct(ext)}</span>
       </span>
     </span>
   );

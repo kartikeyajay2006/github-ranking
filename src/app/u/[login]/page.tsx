@@ -58,11 +58,14 @@ export default async function DossierPage({ params }: Props) {
   const ranked = isIndividual(e.login);
   const teams = teamsForLogin(e.login);
   const ext = e.external;
-  const decided = ext.merged + ext.closedUnmerged;
-  const topExternal = [...new Map(ext.sample.map((p) => [p.repo, p])).values()]
-    .map((p) => ({ ...p, count: ext.sample.filter((s) => s.repo === p.repo).length, last: ext.sample.filter((s) => s.repo === p.repo).map((s) => s.mergedAt).sort().at(-1)! }))
-    .sort((x, y) => y.stars - x.stars || y.count - x.count)
-    .slice(0, 8);
+  const pulls = a.pulls;
+  const landed = (pulls?.repos ?? []).slice(0, 10);
+  const KIND_LABEL = { outside: "Outside", team: "Team", farm: "Farm" } as const;
+  const KIND_TITLE = {
+    outside: "Reviewed and merged by the project's maintainers: counts as open-source contribution",
+    team: "Member, collaborator or self-merged: counts as own & team work, not open source",
+    farm: "Contribution-farm repository: counts for very little",
+  } as const;
   const shown = a.repos.slice(0, 12);
   let i = 0;
 
@@ -194,19 +197,19 @@ export default async function DossierPage({ params }: Props) {
       <div className="grid-2 section">
         <section aria-labelledby="split">
           <div className="section-head">
-            <h2 id="split">Own work vs. contribution</h2>
+            <h2 id="split">Own &amp; team work vs. outside contribution</h2>
             <span className="aside">Commits + PRs, 12 months</span>
           </div>
           {a.split.own + a.split.external > 0 ? (
             <div className="splitboard">
-              <div className="bar" role="img" aria-label={`Own repositories ${pct(1 - a.split.externalShare)}, others' repositories ${pct(a.split.externalShare)}`}>
+              <div className="bar" role="img" aria-label={`Own and team work ${pct(1 - a.split.externalShare)}, outside contribution ${pct(a.split.externalShare)}`}>
                 {a.split.own > 0 && <i style={{ flex: a.split.own, background: "var(--accent)" }} />}
                 {a.split.external > 0 && <i style={{ flex: a.split.external, background: "var(--external)", animationDelay: "120ms" }} />}
               </div>
               <div className="legend">
                 <div>
                   <span className="key">
-                    <i style={{ background: "var(--accent)" }} /> Own repositories
+                    <i style={{ background: "var(--accent)" }} /> Own &amp; team work
                   </span>
                   <span className="n num">{fmt(a.split.own)}</span>
                   <span className="muted num" style={{ fontSize: 12.5 }}>
@@ -215,7 +218,7 @@ export default async function DossierPage({ params }: Props) {
                 </div>
                 <div>
                   <span className="key">
-                    <i style={{ background: "var(--external)" }} /> Others&rsquo; repositories
+                    <i style={{ background: "var(--external)" }} /> Outside contribution
                   </span>
                   <span className="n num">{fmt(a.split.external)}</span>
                   <span className="muted num" style={{ fontSize: 12.5 }}>
@@ -233,17 +236,17 @@ export default async function DossierPage({ params }: Props) {
             {a.orientation} <span>profile</span>
           </p>
           <dl className="figures" style={{ marginTop: 20 }}>
-            <div>
-              <dt>Merged external PRs</dt>
-              <dd>{fmt(ext.merged)}</dd>
+            <div title="Merged by other maintainers, in repositories where the person is not a member or collaborator">
+              <dt>Peer-reviewed PRs</dt>
+              <dd>{pulls ? fmt(pulls.outside) : "—"}</dd>
             </div>
-            <div>
-              <dt>Acceptance</dt>
-              <dd>{decided ? pct(ext.merged / decided) : "—"}</dd>
+            <div title="Merged PRs in organisation or teammates' repositories where the person is an insider or merged their own work">
+              <dt>Team / self-merged</dt>
+              <dd>{pulls ? fmt(pulls.team) : "—"}</dd>
             </div>
-            <div>
-              <dt>Open PRs</dt>
-              <dd>{fmt(ext.open)}</dd>
+            <div title="PRs to Hacktoberfest-style contribution-farm repositories">
+              <dt>Farm PRs</dt>
+              <dd>{pulls ? fmt(pulls.farm) : "—"}</dd>
             </div>
             <div>
               <dt>Issues filed</dt>
@@ -255,13 +258,14 @@ export default async function DossierPage({ params }: Props) {
         <section aria-labelledby="external">
           <div className="section-head">
             <h2 id="external">Where their PRs landed</h2>
-            <span className="aside">{ext.sample.length < ext.merged ? `Sample of ${ext.sample.length}` : "All merged"}</span>
+            <span className="aside">{pulls && pulls.classified < pulls.total ? `${pulls.classified} most recent of ${fmt(pulls.total)}` : "All merged PRs"}</span>
           </div>
-          {topExternal.length ? (
+          {landed.length ? (
             <table className="standings">
               <thead>
                 <tr>
                   <th scope="col">Repository</th>
+                  <th scope="col">Type</th>
                   <th scope="col" className="right">
                     Stars
                   </th>
@@ -269,22 +273,27 @@ export default async function DossierPage({ params }: Props) {
                     PRs
                   </th>
                   <th scope="col" className="right hide-sm">
-                    Latest
+                    Lines/PR
                   </th>
                 </tr>
               </thead>
               <tbody>
-                {topExternal.map((p, k) => (
+                {landed.map((p, k) => (
                   <tr key={p.repo} style={{ ["--i" as string]: k }}>
                     <td>
                       <a className="repo-name" href={`https://github.com/${p.repo}/pulls?q=is%3Apr+is%3Amerged+author%3A${e.login}`} target="_blank" rel="noreferrer">
                         {p.repo}
                       </a>
                     </td>
+                    <td>
+                      <span className={`kind kind-${p.kind}`} title={KIND_TITLE[p.kind]}>
+                        {KIND_LABEL[p.kind]}
+                      </span>
+                    </td>
                     <td className="right num">{fmt(p.stars)}</td>
                     <td className="right num">{p.count}</td>
                     <td className="right num muted hide-sm" style={{ fontSize: 12.5 }}>
-                      {p.last.slice(0, 7)}
+                      {p.count ? fmt(Math.round(p.lines / p.count)) : "—"}
                     </td>
                   </tr>
                 ))}
@@ -292,9 +301,13 @@ export default async function DossierPage({ params }: Props) {
             </table>
           ) : (
             <p className="muted" style={{ marginTop: 20 }}>
-              No merged pull requests to repositories outside this account.
+              {pulls ? "No merged pull requests to repositories outside this account." : "Re-analyse to classify this account's pull requests."}
             </p>
           )}
+          <p className="muted" style={{ fontSize: 12.5, marginTop: 14 }}>
+            Only <b style={{ color: "var(--ink-2)", fontWeight: 500 }}>Outside</b> PRs, reviewed and merged by someone else, count as open source. Team PRs
+            count under projects through the repositories they built.
+          </p>
         </section>
       </div>
 
@@ -319,6 +332,9 @@ export default async function DossierPage({ params }: Props) {
                 <th scope="col" className="right hide-sm">
                   Commits
                 </th>
+                <th scope="col" className="right hide-sm" title="Share of the default branch's commits written by this person">
+                  Authored
+                </th>
                 <th scope="col" style={{ width: 140 }}>
                   Quality
                 </th>
@@ -332,11 +348,16 @@ export default async function DossierPage({ params }: Props) {
                 <tr key={r.nameWithOwner} style={{ ["--i" as string]: k }}>
                   <td style={{ maxWidth: 380 }}>
                     <a className="repo-name" href={r.url} target="_blank" rel="noreferrer">
-                      {r.nameWithOwner.split("/")[1]}
+                      {r.owned === false ? r.nameWithOwner : r.nameWithOwner.split("/")[1]}
                     </a>
                     <span className="muted mono" style={{ fontSize: 11.5, marginLeft: 8 }}>
                       {r.language}
                     </span>
+                    {r.owned === false && (
+                      <span className="kind kind-team" style={{ marginLeft: 8 }} title={`Owned by ${r.nameWithOwner.split("/")[0]}; credited by authorship share`}>
+                        Team
+                      </span>
+                    )}
                     {r.description && <div className="repo-desc">{r.description}</div>}
                   </td>
                   <td className="hide-md">
@@ -350,6 +371,9 @@ export default async function DossierPage({ params }: Props) {
                   </td>
                   <td className="right num hide-sm">{fmt(r.stars)}</td>
                   <td className="right num hide-sm">{fmt(r.commitsByOwner)}</td>
+                  <td className="right num hide-sm muted" style={{ fontSize: 12.5 }}>
+                    {r.authorship === null || r.authorship === undefined ? "—" : pct(r.authorship)}
+                  </td>
                   <td>
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 40px", gap: 10, alignItems: "center" }}>
                       <Meter value={r.quality / 100} i={k} label={`Quality ${fmt(r.quality)}`} />

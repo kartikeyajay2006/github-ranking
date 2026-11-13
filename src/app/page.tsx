@@ -60,7 +60,7 @@ export default async function IndividualsPage() {
                   <StripLegend />
                 </th>
                 <th scope="col" className="hide-md">
-                  Own vs external
+                  Own vs outside
                 </th>
                 <th scope="col" className="right hide-sm">
                   Analysed
@@ -108,10 +108,10 @@ export default async function IndividualsPage() {
               PRJ project quality · OSS open-source contribution · ACT activity · IMP impact · BRD breadth
             </span>
             <span className="key">
-              <i style={{ background: "var(--accent)" }} /> own repositories
+              <i style={{ background: "var(--accent)" }} /> own &amp; team work
             </span>
             <span className="key">
-              <i style={{ background: "var(--external)" }} /> others&rsquo; repositories (commits + PRs, 12 months)
+              <i style={{ background: "var(--external)" }} /> outside contribution (commits + PRs, 12 months)
             </span>
           </div>
         </div>

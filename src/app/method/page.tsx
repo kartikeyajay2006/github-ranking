@@ -12,7 +12,7 @@ const SECTIONS = [
   ["activity", "Activity & consistency"],
   ["impact", "Impact & reach"],
   ["breadth", "Engineering breadth"],
-  ["split", "Own work vs. contribution"],
+  ["split", "Own & team vs. outside"],
   ["teams", "Teams"],
   ["limits", "Limits"],
 ] as const;
@@ -56,8 +56,16 @@ export default function MethodPage() {
               so volume can&rsquo;t be farmed.
             </li>
             <li>
-              <strong>Quality over quantity.</strong> Only an account&rsquo;s five strongest original repositories count towards project quality; forks and the
+              <strong>Quality over quantity.</strong> Only an account&rsquo;s five strongest repositories count towards project quality; forks and the
               profile README repository are excluded.
+            </li>
+            <li>
+              <strong>Individual credit.</strong> A repository is credited by how much of it the person actually wrote, and only pull requests reviewed and
+              merged by someone else count as open-source contribution. Self-merged and team work is credited, but as the person&rsquo;s own projects.
+            </li>
+            <li>
+              <strong>Hard-to-fake signals.</strong> Followers carry almost no weight, tiny PRs count less than substantial ones, and contribution-farm
+              repositories (Hacktoberfest walls and the like) count for close to nothing.
             </li>
           </ul>
 
@@ -107,8 +115,14 @@ export default function MethodPage() {
           <h2 id="projects">Project quality</h2>
           <p>
             Up to 24 original public repositories are inspected in depth: the ones most likely to represent the person&rsquo;s best work, by stars, forks, size,
-            description and recency. Each gets a quality score out of 100, and the five best are combined with weights of{" "}
-            {PORTFOLIO_WEIGHTS.map((w) => pct(w)).join(" / ")}.
+            description and recency. Up to 8 <strong>team repositories</strong> are added: organisation or teammates&rsquo; repositories where the person is a
+            member or collaborator, merges their own PRs, or commits heavily. Each gets a quality score out of 100, and the five best are combined with weights
+            of {PORTFOLIO_WEIGHTS.map((w) => pct(w)).join(" / ")}.
+          </p>
+          <p>
+            <strong>Authorship.</strong> Every repository&rsquo;s quality is multiplied by <code>min(1, 0.4 + 1.2 × share)</code>, where share is the fraction
+            of default-branch commits the person wrote: half or more earns full credit, a quarter earns 70%. Team repositories where they wrote under 10% are
+            not counted at all.
           </p>
           <table className="spec">
             <thead>
@@ -144,21 +158,35 @@ export default function MethodPage() {
 
           <h2 id="opensource">Open-source contribution</h2>
           <p>
-            Contribution means work in repositories the account does not own, found with the search <code>author:login -user:login</code> across all time.
+            Every merged pull request in repositories the account doesn&rsquo;t own (<code>author:login -user:login</code>, the 200 most recent) is classified:
           </p>
+          <ul>
+            <li>
+              <strong>Outside</strong>: the author is not an owner, member or collaborator of the repository, and someone else merged it. Only these count here.
+            </li>
+            <li>
+              <strong>Team</strong>: the author is an insider there, or merged their own PR. This is the person&rsquo;s own or team work and is credited under
+              project quality instead.
+            </li>
+            <li>
+              <strong>Farm</strong>: a repository that exists to collect easy PRs (Hacktoberfest, &ldquo;first contributions&rdquo;, contribution walls,
+              question dumps). These count 15% of an outside PR.
+            </li>
+          </ul>
           <table className="spec">
             <tbody>
               <tr>
-                <td>Merged pull requests</td>
+                <td>Peer-reviewed PRs</td>
                 <td className="num">45%</td>
                 <td>
-                  Merged PRs, each weighted from 0.4 (unknown project) to 1.0 (2,000+ stars) by the target&rsquo;s stature; log curve to 60 weighted PRs
+                  Outside PRs, each weighted by the project&rsquo;s stature (0.4 for an unknown repository to 1.0 at 2,000+ stars) and by the size of the change
+                  (0.35 for a one-liner to 1.0 at 150+ changed lines); log curve to 40 weighted PRs
                 </td>
               </tr>
               <tr>
                 <td>Repository reach</td>
                 <td className="num">20%</td>
-                <td>Distinct repositories that merged their work; log curve to 20</td>
+                <td>Distinct outside repositories that merged their work; log curve to 15</td>
               </tr>
               <tr>
                 <td>Project stature</td>
@@ -168,7 +196,9 @@ export default function MethodPage() {
               <tr>
                 <td>Acceptance rate</td>
                 <td className="num">10%</td>
-                <td>Merged ÷ (merged + closed unmerged), smoothed and discounted below ten decided PRs</td>
+                <td>
+                  Outside merged ÷ (outside merged + closed unmerged, attributed in proportion to the outside share), smoothed and discounted below ten decided PRs
+                </td>
               </tr>
               <tr>
                 <td>Issues &amp; reviews</td>
@@ -209,23 +239,23 @@ export default function MethodPage() {
             <tbody>
               <tr>
                 <td>Stars earned</td>
-                <td className="num">50%</td>
+                <td className="num">55%</td>
                 <td>Across all original repositories; log curve to 5,000</td>
               </tr>
               <tr>
-                <td>Followers</td>
-                <td className="num">25%</td>
-                <td>Log curve to 1,000</td>
-              </tr>
-              <tr>
                 <td>Forks of own work</td>
-                <td className="num">15%</td>
+                <td className="num">20%</td>
                 <td>Log curve to 500</td>
               </tr>
               <tr>
                 <td>Adopted projects</td>
-                <td className="num">10%</td>
+                <td className="num">20%</td>
                 <td>Repositories with 10+ stars; log curve to 10</td>
+              </tr>
+              <tr>
+                <td>Followers</td>
+                <td className="num">5%</td>
+                <td>Log curve to 1,000. Deliberately minor: follower counts are easily traded and say little about the work.</td>
               </tr>
             </tbody>
           </table>
@@ -251,9 +281,10 @@ export default function MethodPage() {
             </tbody>
           </table>
 
-          <h2 id="split">Own work vs. contribution</h2>
+          <h2 id="split">Own &amp; team work vs. outside contribution</h2>
           <p>
-            Commits and pull requests from the last 12 months are split by repository owner. If 60% or more went to repositories the person doesn&rsquo;t own,
+            Commits and pull requests from the last 12 months are split into own &amp; team work (repositories the person owns, is an insider in, or wrote a
+            quarter or more of) and outside contribution (everything else). If 60% or more went to outside repositories,
             the profile is <strong>Contributor-led</strong>; at 25% or less it is <strong>Builder-led</strong>; otherwise <strong>Balanced</strong>. Fewer
             than ten actions is reported as insufficient activity. The split describes how someone works; it doesn&rsquo;t add or remove points by itself.
           </p>
@@ -277,16 +308,17 @@ export default function MethodPage() {
           <ul>
             <li>Only public data is inspected. Private contributions appear in the activity calendar when the user has enabled it, but can&rsquo;t be examined.</li>
             <li>
-              Repositories under organisations count as contribution, not own work, even when the person founded the organisation. A solo developer who
-              publishes through an organisation will read as Contributor-led.
+              Team repositories are found through the person&rsquo;s merged PRs and last-12-month commits. An organisation project they built years ago, with no
+              recent activity and no PRs, is not picked up.
             </li>
+            <li>Contribution farms are recognised by repository name; an unusually named farm will be treated as a normal outside project.</li>
             <li>Test detection looks at the repository root and <code>src/test</code>; tests nested deeper in a monorepo may be missed.</li>
             <li>
               Commits authored under an e-mail that isn&rsquo;t linked to the account don&rsquo;t attribute. On repositories the person owns, half of the history
               is credited instead, and the profile says so.
             </li>
             <li>
-              For accounts with more than 50 merged external PRs, reach and stature are measured on a sample of 50; the count itself is always complete.
+              For accounts with more than 200 merged PRs elsewhere, the 200 most recent are classified and the rest are assumed to follow the same mix.
             </li>
             <li>An analysis is reused for 12 hours, then refreshed the next time it&rsquo;s requested. Any profile can be re-analysed on demand.</li>
           </ul>

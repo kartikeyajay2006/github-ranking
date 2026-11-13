@@ -8,20 +8,21 @@ Every developer gets a score out of 100 from their public GitHub evidence only. 
 
 - **One person, one context.** An assessment reads a single account's data and nothing else. No other participant is consulted, compared or used for normalisation.
 - **Absolute thresholds.** Every curve has fixed reference points. Adding, removing or re-analysing anyone never moves another person's score; the ranking is just a sort.
-- **Diminishing returns.** Counts pass through saturating log curves, so volume can't be farmed.
+- **Individual credit.** Repositories are credited by the share of commits the person actually wrote. Only pull requests reviewed and merged by someone else count as open-source contribution. Self-merged and team work counts as the person's own projects instead.
+- **Hard-to-fake signals.** Counts pass through saturating log curves, so volume can't be farmed. Followers carry almost no weight, tiny PRs count less than substantial ones, and contribution-farm repos (Hacktoberfest walls and the like) count for close to nothing.
 - **Traceable.** Each profile shows a score ledger. Every factor is listed with its evidence, its weight and the points it earned, and the points add up to the total.
 
 ## What it measures
 
 | Dimension | Weight | Built from |
 |---|---|---|
-| Project quality | 32% | The 5 best of up to 24 inspected original repos (35/25/18/12/10): README, docs, tests, CI, licence, releases, owner commits, maintenance, stars, forks |
-| Open-source contribution | 25% | Merged PRs to repos the person doesn't own (weighted by target stature), distinct repos, most prominent project, acceptance rate, issues and reviews |
+| Project quality | 32% | The 5 best of up to 24 owned repos plus up to 8 team/organisation repos (35/25/18/12/10), each scaled by authorship share: README, docs, tests, CI, licence, releases, authored commits, maintenance, stars, forks |
+| Open-source contribution | 25% | Peer-reviewed PRs only: the author isn't a member or collaborator, and someone else merged it. Weighted by project stature and change size; distinct repos, most prominent project, acceptance rate, issues and reviews |
 | Activity & consistency | 15% | Active days, active weeks, volume and recency over the last 12 months |
-| Impact & reach | 18% | Stars earned, followers, forks, repos with 10+ stars |
+| Impact & reach | 18% | Stars earned, forks, repos with 10+ stars; followers only 5% of this section |
 | Engineering breadth | 10% | Languages, number of substantial projects, repos contributed to this year |
 
-Each profile also shows how much of the last 12 months' commits and PRs went to the person's own repositories and how much to other people's. The profile is labelled **Builder-led**, **Balanced** or **Contributor-led**. The full specification is on the `/method` page.
+Each profile also splits the last 12 months' commits and PRs into **own & team work** and **outside contribution**, and every merged PR elsewhere is labelled Outside, Team or Farm. The profile is labelled **Builder-led**, **Balanced** or **Contributor-led**. The full specification is on the `/method` page.
 
 ### Teams
 
@@ -83,6 +84,7 @@ A typical account takes 5–10 seconds to analyse. Very large repositories are i
 ## Known limits
 
 - Only public data is inspected. Private contributions show in the activity calendar when the user has enabled that, but their content can't be examined.
-- Repositories under an organisation count as contribution, not own work, even when the person founded the organisation.
+- Team repositories are discovered through merged PRs and last-12-month commits. An old organisation project with no recent activity isn't picked up.
+- Contribution farms are recognised by repository name.
 - Tests are detected at the repository root and in `src/test`. Tests nested deeper in a monorepo can be missed.
 - Commits made from an e-mail address that isn't linked to the account don't attribute to it. On repositories the person owns, half of the history is credited instead.

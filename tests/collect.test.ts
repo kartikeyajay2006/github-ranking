@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { inspectionCandidates, normaliseLogin, readRepo } from "@/lib/github/collect";
+import { inspectionCandidates, normaliseLogin, readRepo, teamRepoCandidates } from "@/lib/github/collect";
 import { parseLogins } from "@/lib/analyze";
 
 describe("normaliseLogin", () => {
@@ -98,5 +98,22 @@ describe("inspectionCandidates", () => {
       2,
     );
     expect(picks).toEqual(["dev/real", "dev/toy"]);
+  });
+});
+
+describe("teamRepoCandidates", () => {
+  it("picks insider repositories and heavy-commit repositories, never outside-reviewed ones", () => {
+    const pr = (repo: string, association: string, selfMerged = false) => ({ repo, stars: 0, mergedAt: "2026-10-01T00:00:00Z", association, selfMerged, lines: 10 });
+    const picks = teamRepoCandidates(
+      "dev",
+      [pr("org/startup", "MEMBER", true), pr("org/startup", "MEMBER"), pr("mate/hack", "COLLABORATOR", true), pr("mate/hack", "COLLABORATOR", true), pr("big/lib", "CONTRIBUTOR")],
+      new Map([
+        ["company/app", 60],
+        ["big/lib", 80],
+        ["dev/own", 500],
+        ["tiny/thing", 3],
+      ]),
+    );
+    expect(picks).toEqual(["company/app", "org/startup", "mate/hack"]);
   });
 });

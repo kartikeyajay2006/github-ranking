@@ -4,14 +4,17 @@ import type {
   Dimension,
   DimensionKey,
   Factor,
+  ExternalPullRequest,
   Orientation,
   ProfileEvidence,
+  PullBreakdown,
+  PullClass,
   RepoAssessment,
   RepoEvidence,
 } from "../types";
 import { DAY, clamp01, daysSince, logRef, plural, ramp, round1 } from "./curves";
 
-export const METHODOLOGY_VERSION = "2026.11-r1";
+export const METHODOLOGY_VERSION = "2026.11-r2";
 
 /**
  * Every threshold below is a fixed constant. Nothing is normalised against a cohort, so an
@@ -56,8 +59,10 @@ interface RepoGroups {
 
 export const REPO_GROUP_MAX: RepoGroups = { documentation: 0.26, hygiene: 0.3, sustained: 0.2, adoption: 0.24 };
 
+const isOwned = (repo: RepoEvidence) => repo.owned !== false;
+
 export function ownerCommits(repo: RepoEvidence): { count: number; inferred: boolean } {
-  if (repo.commitsByOwner > 0 || repo.commitsSource === "last-year") return { count: repo.commitsByOwner, inferred: false };
+  if (repo.commitsByOwner > 0 || repo.commitsSource === "last-year" || !isOwned(repo)) return { count: repo.commitsByOwner, inferred: false };
   // Commits authored under an e-mail that isn't linked to the account don't attribute. On a repository
   // the account owns, credit half of the history rather than none.
   return { count: Math.round(repo.commitsTotal * 0.5), inferred: repo.commitsTotal > 0 };
@@ -82,6 +87,25 @@ export function repoGroups(repo: RepoEvidence, now: number): RepoGroups {
 
 const sumGroups = (g: RepoGroups) => g.documentation + g.hygiene + g.sustained + g.adoption;
 
+/** Share of the default branch this person wrote, or null when it can't be known (unlinked e-mail, history too large). */
+export function authorship(repo: RepoEvidence): number | null {
+  if (repo.commitsSource === "last-year" || repo.commitsTotal <= 0) return isOwned(repo) ? null : 0.5;
+  if (repo.commitsByOwner === 0 && isOwned(repo)) return null;
+  return Math.min(1, repo.commitsByOwner / repo.commitsTotal);
+}
+
+/**
+ * Credit a repository by how much of it the person actually wrote: half or more earns full credit,
+ * a quarter earns 70%, and nothing written earns 40% (documentation and hygiene still reflect choices
+ * an owner makes). Repositories they don't own and barely touched are excluded altogether.
+ */
+export const authorshipFactor = (share: number | null) => (share === null ? 1 : Math.min(1, 0.4 + 1.2 * share));
+export const MIN_TEAM_AUTHORSHIP = 0.1;
+
+function scaleGroups(g: RepoGroups, f: number): RepoGroups {
+  return { documentation: g.documentation * f, hygiene: g.hygiene * f, sustained: g.sustained * f, adoption: g.adoption * f };
+}
+
 /* --------------------------------------------------------------- dimensions --------------------------------------------------------------- */
 
 function dimension(key: DimensionKey, factors: Factor[]): Dimension {
@@ -93,7 +117,8 @@ function projects(ev: ProfileEvidence, now: number) {
   const profileRepo = `${ev.login}/${ev.login}`.toLowerCase();
   const scored = ev.inspected
     .filter((r) => r.nameWithOwner.toLowerCase() !== profileRepo)
-    .map((r) => ({ repo: r, groups: repoGroups(r, now) }))
+    .filter((r) => isOwned(r) || (authorship(r) ?? 0) >= MIN_TEAM_AUTHORSHIP)
+    .map((r) => ({ repo: r, share: authorship(r), groups: scaleGroups(repoGroups(r, now), authorshipFactor(authorship(r))) }))
     .sort((a, b) => sumGroups(b.groups) - sumGroups(a.groups));
 
   const counted = scored.slice(0, PORTFOLIO_WEIGHTS.length);
@@ -110,6 +135,8 @@ function projects(ev: ProfileEvidence, now: number) {
   const count = (pred: (r: RepoEvidence) => boolean) => top.filter(pred).length;
   const of = top.length ? ` of top ${top.length}` : "";
   const commits = top.reduce((s, r) => s + ownerCommits(r).count, 0);
+  const teamRepos = counted.filter((c) => !isOwned(c.repo));
+  const shared = counted.filter((c) => c.share !== null && c.share < 0.5);
 
   const factors: Factor[] = [
     {
@@ -136,7 +163,9 @@ function projects(ev: ProfileEvidence, now: number) {
       value: agg.sustained / REPO_GROUP_MAX.sustained,
       weight: REPO_GROUP_MAX.sustained,
       evidence: top.length
-        ? `${plural(commits, "commit")} by the owner; ${count((r) => daysSince(r.pushedAt, now) <= 180)}${of} pushed in the last six months`
+        ? `${plural(commits, "commit")} authored; ${count((r) => daysSince(r.pushedAt, now) <= 180)}${of} pushed in the last six months` +
+          (shared.length ? `; ${shared.length} credited by authorship share` : "") +
+          (teamRepos.length ? `; ${plural(teamRepos.length, "team repository", "team repositories")} counted` : "")
         : "—",
     },
     {
@@ -150,7 +179,7 @@ function projects(ev: ProfileEvidence, now: number) {
     },
   ];
 
-  const repos: RepoAssessment[] = scored.map(({ repo, groups }, i) => ({
+  const repos: RepoAssessment[] = scored.map(({ repo, groups, share }, i) => ({
     nameWithOwner: repo.nameWithOwner,
     url: repo.url,
     description: repo.description,
@@ -169,44 +198,106 @@ function projects(ev: ProfileEvidence, now: number) {
       maintained: daysSince(repo.pushedAt, now) <= 180,
     },
     commitsByOwner: ownerCommits(repo).count,
+    owned: isOwned(repo),
+    authorship: share,
   }));
 
   return { dim: dimension("projects", factors), repos, inferred: top.some((r) => ownerCommits(r).inferred) };
 }
 
-/** Each merged PR counts between 0.4 (unknown project) and 1.0 (2,000+ stars), so trivial targets can't inflate the count. */
+/** Stature of the target project: 0.4 for an unknown repository up to 1.0 at 2,000+ stars. */
 export const prWeight = (stars: number) => 0.4 + 0.6 * logRef(stars, 2000);
 
-function opensource(ev: ProfileEvidence) {
+/** Substance of the change: a one-line fix counts 0.35, 150+ changed lines count fully. */
+export const prSubstance = (lines: number | undefined) => (lines === undefined ? 1 : 0.35 + 0.65 * logRef(lines, 150));
+
+/** Repositories that exist to collect easy pull requests (Hacktoberfest walls, "add your name", question dumps). */
+export const FARM_RE =
+  /(hacktober|first[-_ ]?contributions?|contributions?[-_ ]?(wall|list|board|hub)|code[-_ ]?contributions?|open[-_ ]?source[-_ ]?contributions?|add[-_ ]?your[-_ ]?(name|profile)|contributors?[-_ ]?(list|wall)|good[-_ ]?first[-_ ]?issues?|leetcode|interview[-_ ]?questions|dsa[-_ ]?(questions|problems))/i;
+
+const INSIDER = new Set(["OWNER", "MEMBER", "COLLABORATOR"]);
+
+/**
+ * Only peer-reviewed outside work counts as open-source contribution: the author is not an owner,
+ * member or collaborator of the repository, and somebody else merged it. Everything else is the
+ * person's own or team work and is assessed under projects instead.
+ */
+export function classifyPull(p: ExternalPullRequest): PullClass {
+  if (INSIDER.has(p.association ?? "") || p.selfMerged) return "team";
+  if (FARM_RE.test(p.repo.split("/")[1] ?? "")) return "farm";
+  return "outside";
+}
+
+export function pullBreakdown(ev: ProfileEvidence): PullBreakdown {
+  const groups = new Map<string, PullBreakdown["repos"][number]>();
+  let outside = 0;
+  let team = 0;
+  let farm = 0;
+  for (const p of ev.external.sample) {
+    const kind = classifyPull(p);
+    if (kind === "outside") outside++;
+    else if (kind === "team") team++;
+    else farm++;
+    const g = groups.get(p.repo) ?? { repo: p.repo, stars: p.stars, count: 0, kind, last: p.mergedAt, lines: 0 };
+    g.count++;
+    g.lines += p.lines ?? 0;
+    if (p.mergedAt > g.last) g.last = p.mergedAt;
+    if (kind === "team") g.kind = "team";
+    groups.set(p.repo, g);
+  }
+  const order: Record<PullClass, number> = { outside: 0, farm: 1, team: 2 };
+  return {
+    total: ev.external.merged,
+    classified: ev.external.sample.length,
+    outside,
+    team,
+    farm,
+    selfMerged: ev.external.sample.filter((p) => p.selfMerged).length,
+    repos: [...groups.values()].sort((a, b) => order[a.kind] - order[b.kind] || b.stars - a.stars || b.count - a.count),
+  };
+}
+
+function opensource(ev: ProfileEvidence, pulls: PullBreakdown) {
   const { merged, closedUnmerged, issues, sample } = ev.external;
-  const avgWeight = sample.length ? sample.reduce((s, p) => s + prWeight(p.stars), 0) / sample.length : 0.4;
-  const weighted = merged * avgWeight;
-  const repoStars = new Map<string, number>();
-  for (const p of sample) repoStars.set(p.repo, p.stars);
-  const distinct = repoStars.size;
-  const notable = [...repoStars.entries()].sort((a, b) => b[1] - a[1])[0];
-  const decided = merged + closedUnmerged;
-  const acceptance = decided ? ((merged + 1) / (decided + 2)) * Math.min(1, decided / 10) : 0;
+  const outsidePulls = sample.filter((p) => classifyPull(p) !== "team");
+  // Beyond the 200 most recent, assume the same mix of outside work.
+  const scale = sample.length ? Math.max(1, merged / sample.length) : 0;
+  const weighted =
+    scale *
+    outsidePulls.reduce((s, p) => s + prWeight(p.stars) * prSubstance(p.lines) * (classifyPull(p) === "farm" ? 0.15 : 1), 0);
+  const outsideMerged = Math.round(pulls.outside * scale);
+
+  const real = new Map<string, number>();
+  for (const p of outsidePulls) if (classifyPull(p) === "outside") real.set(p.repo, p.stars);
+  const notable = [...real.entries()].sort((a, b) => b[1] - a[1])[0];
+
+  // Closed-unmerged PRs can't be classified; attribute them in proportion to the outside share.
+  const outsideShare = sample.length ? outsidePulls.length / sample.length : 0;
+  const closedOutside = closedUnmerged * outsideShare;
+  const decided = outsidePulls.length * scale + closedOutside;
+  const acceptance = decided ? ((outsidePulls.length * scale + 1) / (decided + 2)) * Math.min(1, decided / 10) : 0;
   const engagement = issues + ev.year.reviewsExternal;
 
+  const excluded = pulls.team + pulls.farm;
   const factors: Factor[] = [
     {
       key: "merged",
-      label: "Merged pull requests",
-      value: logRef(weighted, 60),
+      label: "Peer-reviewed PRs",
+      value: logRef(weighted, 40),
       weight: 0.45,
-      evidence: merged
-        ? `${plural(merged, "merged PR")} to repositories the account doesn't own (stature-weighted ${weighted.toFixed(1)})`
-        : "No merged pull requests outside own repositories",
+      evidence: outsideMerged
+        ? `${plural(outsideMerged, "PR")} merged by other maintainers (weighted ${weighted.toFixed(1)} for project stature and size)` +
+          (excluded ? `; ${excluded} team, self-merged or farm PRs not counted here` : "")
+        : merged
+          ? `None of ${plural(merged, "merged PR")} were reviewed and merged by outside maintainers`
+          : "No merged pull requests outside own repositories",
     },
     {
       key: "reach",
       label: "Repository reach",
-      value: logRef(distinct, 20),
+      value: logRef(real.size, 15),
       weight: 0.2,
-      evidence: distinct
-        ? `${merged > sample.length ? "At least " : ""}${plural(distinct, "distinct repository", "distinct repositories")} accepted their work`
-        : "—",
+      evidence: real.size ? `${plural(real.size, "outside repository", "outside repositories")} accepted their work` : "—",
     },
     {
       key: "notable",
@@ -220,9 +311,7 @@ function opensource(ev: ProfileEvidence) {
       label: "Acceptance rate",
       value: acceptance,
       weight: 0.1,
-      evidence: decided
-        ? `${Math.round((merged / decided) * 100)}% of ${plural(decided, "decided PR")} merged${decided < 10 ? " (small sample, discounted)" : ""}`
-        : "No decided pull requests",
+      evidence: decided >= 1 ? `≈${Math.round(((outsidePulls.length * scale) / decided) * 100)}% of outside PRs merged${decided < 10 ? " (small sample, discounted)" : ""}` : "No outside PRs decided",
     },
     {
       key: "engagement",
@@ -289,10 +378,11 @@ function impact(ev: ProfileEvidence) {
   const forks = ev.repos.reduce((s, r) => s + r.forks, 0);
   const adopted = ev.repos.filter((r) => r.stars >= 10).length;
   const factors: Factor[] = [
-    { key: "stars", label: "Stars earned", value: logRef(stars, 5000), weight: 0.5, evidence: `${plural(stars, "star")} across ${plural(ev.ownedRepoCount, "original repository", "original repositories")}` },
-    { key: "followers", label: "Followers", value: logRef(ev.followers, 1000), weight: 0.25, evidence: plural(ev.followers, "follower") },
-    { key: "forks", label: "Forks of own work", value: logRef(forks, 500), weight: 0.15, evidence: plural(forks, "fork") },
-    { key: "adopted", label: "Adopted projects", value: logRef(adopted, 10), weight: 0.1, evidence: `${plural(adopted, "repository", "repositories")} with 10+ stars` },
+    { key: "stars", label: "Stars earned", value: logRef(stars, 5000), weight: 0.55, evidence: `${plural(stars, "star")} across ${plural(ev.ownedRepoCount, "original repository", "original repositories")}` },
+    { key: "forks", label: "Forks of own work", value: logRef(forks, 500), weight: 0.2, evidence: plural(forks, "fork") },
+    { key: "adopted", label: "Adopted projects", value: logRef(adopted, 10), weight: 0.2, evidence: `${plural(adopted, "repository", "repositories")} with 10+ stars` },
+    // Follower counts are easily traded (follow-for-follow) and say little about the person's work.
+    { key: "followers", label: "Followers", value: logRef(ev.followers, 1000), weight: 0.05, evidence: `${plural(ev.followers, "follower")} (deliberately minor)` },
   ];
   return dimension("impact", factors);
 }
@@ -314,6 +404,27 @@ function breadth(ev: ProfileEvidence, repos: RepoAssessment[]) {
   return dimension("breadth", factors);
 }
 
+/**
+ * Last-12-month commits + PRs, split into the person's own and team work versus outside contribution.
+ * Repositories count as team work when they own them, are an insider there (member, collaborator,
+ * self-merging), or wrote a substantial share of the code.
+ */
+export function workSplit(ev: ProfileEvidence): { own: number; external: number } {
+  if (!ev.year.byRepo) return { own: ev.year.commitsOwn + ev.year.pullsOwn, external: ev.year.commitsExternal + ev.year.pullsExternal };
+  const login = ev.login.toLowerCase();
+  const team = new Set<string>();
+  for (const p of ev.external.sample) if (classifyPull(p) === "team") team.add(p.repo.toLowerCase());
+  for (const r of ev.inspected) if (r.owned === false && (authorship(r) ?? 0) >= 0.25) team.add(r.nameWithOwner.toLowerCase());
+  let own = 0;
+  let external = 0;
+  for (const r of ev.year.byRepo) {
+    const n = r.commits + r.pulls;
+    if (r.owner.toLowerCase() === login || team.has(r.repo.toLowerCase())) own += n;
+    else external += n;
+  }
+  return { own, external };
+}
+
 export function orientationFor(own: number, external: number): Orientation {
   if (own + external < 10) return "Insufficient activity";
   const share = external / (own + external);
@@ -325,18 +436,21 @@ export function orientationFor(own: number, external: number): Orientation {
 /** Assesses one account from its own evidence. Pure and deterministic for a given `now`. */
 export function assess(ev: ProfileEvidence, now = Date.parse(ev.fetchedAt), collectionNotes: string[] = []): Assessment {
   const proj = projects(ev, now);
-  const dims = [proj.dim, opensource(ev), activity(ev, now), impact(ev), breadth(ev, proj.repos)];
+  const pulls = pullBreakdown(ev);
+  const dims = [proj.dim, opensource(ev, pulls), activity(ev, now), impact(ev), breadth(ev, proj.repos)];
   const total = round1(dims.reduce((s, d) => s + d.score * d.weight, 0));
 
-  const own = ev.year.commitsOwn + ev.year.pullsOwn;
-  const external = ev.year.commitsExternal + ev.year.pullsExternal;
+  const { own, external } = workSplit(ev);
 
   const notes = [...collectionNotes];
   if (ev.year.restricted > 0)
     notes.push(`${plural(ev.year.restricted, "private contribution")} appear in the activity calendar; their content can't be inspected.`);
   if (ev.reposTruncated) notes.push(`Only the ${ev.repos.length.toLocaleString("en-US")} most-starred of ${ev.ownedRepoCount.toLocaleString("en-US")} repositories were scanned for impact.`);
   if (ev.external.merged > ev.external.sample.length)
-    notes.push(`Reach and stature are measured on a sample of ${ev.external.sample.length} of ${ev.external.merged.toLocaleString("en-US")} merged external PRs.`);
+    notes.push(`The ${ev.external.sample.length} most recent of ${ev.external.merged.toLocaleString("en-US")} merged PRs were classified; the rest are assumed to follow the same mix.`);
+  if (pulls.team > 0)
+    notes.push(`${plural(pulls.team, "merged PR")} in other accounts' repositories were team work (member, collaborator or self-merged) and count towards projects, not open source.`);
+  if (pulls.farm > 0) notes.push(`${plural(pulls.farm, "PR")} went to contribution-farm repositories and count for very little.`);
   if (proj.inferred) notes.push("Some commits aren't linked to the account's e-mail; half of those repositories' history was credited to the owner.");
   if (daysSince(ev.createdAt, now) < 180) notes.push("The account is under six months old.");
   if (ev.ownedRepoCount === 0) notes.push("The account owns no public original repositories.");
@@ -349,6 +463,7 @@ export function assess(ev: ProfileEvidence, now = Date.parse(ev.fetchedAt), coll
     orientation: orientationFor(own, external),
     split: { own, external, externalShare: own + external ? external / (own + external) : 0 },
     repos: proj.repos,
+    pulls,
     notes,
   };
 }

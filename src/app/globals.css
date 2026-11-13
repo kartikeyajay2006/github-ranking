@@ -1681,3 +1681,31 @@ tr:nth-child(-n + 3) .rank {
     display: none;
   }
 }
+
+/* pull request / repository classification */
+.kind {
+  display: inline-block;
+  font: 500 9.5px/1 var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 4px 6px;
+  border-radius: 2px;
+  border: 1px solid var(--rule-strong);
+  color: var(--ink-2);
+  white-space: nowrap;
+  vertical-align: 1px;
+}
+.kind-outside {
+  border-color: var(--external);
+  color: var(--ink);
+  box-shadow: inset 3px 0 0 var(--external);
+  padding-left: 8px;
+}
+.kind-team {
+  box-shadow: inset 3px 0 0 var(--accent);
+  padding-left: 8px;
+}
+.kind-farm {
+  color: var(--ink-3);
+  text-decoration: line-through;
+}
