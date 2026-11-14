@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
-import { createOrExtendTeam } from "../actions";
-import { CreateTeam } from "@/components/forms";
+import { createOrExtendTeam, deleteTeam } from "../actions";
+import { ActionButton, CreateTeam } from "@/components/forms";
 import { Avatar, Band, Strip, StripLegend, fmt, relative } from "@/components/ui";
 import { teamStandings } from "@/lib/standings";
 
@@ -70,6 +70,9 @@ export default async function TeamsPage({ searchParams }: { searchParams: Promis
                 <th scope="col" className="right hide-sm">
                   Updated
                 </th>
+                <th scope="col" className="row-action">
+                  <span className="sr-only">Delete</span>
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -118,6 +121,12 @@ export default async function TeamsPage({ searchParams }: { searchParams: Promis
                     <td className="hide-md">{result && <Strip dimensions={result.dimensions} i={i} />}</td>
                     <td className="right hide-sm muted" style={{ fontSize: 12.5, whiteSpace: "nowrap" }}>
                       {updated ? relative(updated) : relative(team.createdAt)}
+                    </td>
+                    <td className="row-action">
+                      <ActionButton className="row-remove" action={deleteTeam.bind(null, team.id)} confirm={`Delete the team “${team.name}”? This can't be undone.`} busy="…">
+                        <span aria-hidden="true">×</span>
+                        <span className="sr-only">Delete {team.name}</span>
+                      </ActionButton>
                     </td>
                   </tr>
                 );

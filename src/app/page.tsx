@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { connection } from "next/server";
-import { addIndividuals } from "./actions";
-import { AddDevelopers } from "@/components/forms";
+import { addIndividuals, removeIndividual } from "./actions";
+import { ActionButton, AddDevelopers } from "@/components/forms";
 import { Avatar, Band, Split, Strip, StripLegend, fmt, relative } from "@/components/ui";
 import { listIndividuals } from "@/lib/store";
 
@@ -65,6 +65,9 @@ export default async function IndividualsPage() {
                 <th scope="col" className="right hide-sm">
                   Analysed
                 </th>
+                <th scope="col" className="row-action">
+                  <span className="sr-only">Remove</span>
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -97,6 +100,12 @@ export default async function IndividualsPage() {
                     </td>
                     <td className="right hide-sm muted" style={{ fontSize: 12.5, whiteSpace: "nowrap" }}>
                       {relative(s.analyzedAt)}
+                    </td>
+                    <td className="row-action">
+                      <ActionButton className="row-remove" action={removeIndividual.bind(null, s.login)} confirm={`Remove @${s.login} from the standings?`} busy="…">
+                        <span aria-hidden="true">×</span>
+                        <span className="sr-only">Remove @{s.login}</span>
+                      </ActionButton>
                     </td>
                   </tr>
                 );

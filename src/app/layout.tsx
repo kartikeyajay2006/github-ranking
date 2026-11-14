@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { IBM_Plex_Mono, IBM_Plex_Sans, Newsreader } from "next/font/google";
+import { AutoRefresh } from "@/components/auto-refresh";
 import { Masthead } from "@/components/masthead";
 import { RateFooter } from "@/components/rate-footer";
 import "./globals.css";
@@ -32,6 +33,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <Masthead />
         <main>{children}</main>
+        <AutoRefresh />
         <RateFooter />
       </body>
     </html>
