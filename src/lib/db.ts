@@ -2,7 +2,7 @@ import "server-only";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { backupNow, databaseFile, recoverIfCorrupt, scheduleBackups } from "./backup";
+import { backupNow, databaseFile, recoverIfCorrupt, scheduleBackups, shutdownBackup } from "./backup";
 
 const SCHEMA = /* SQL */ `
   PRAGMA journal_mode = WAL;
@@ -110,6 +110,7 @@ export function db(): DatabaseSync {
     // Fold the write-ahead log into the main file on shutdown, so the .db file alone is a complete copy.
     process.once("exit", () => {
       try {
+        shutdownBackup(conn);
         conn.exec("PRAGMA wal_checkpoint(TRUNCATE)");
         conn.close();
       } catch {

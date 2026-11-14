@@ -270,13 +270,17 @@ SITE_ADDRESS=ranking.example.com docker compose -f docker-compose.prod.yml up -d
 
 The image is a Next.js standalone server on Node 24 (~45 MB of app files). It runs as a non-root user, has a health check on `/api/health`, and checkpoints the database cleanly on shutdown.
 
-### Render (one click)
+### Render (free plan, one click)
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/kartikeyajay2006/github-ranking)
 
-`render.yaml` describes one web service in Singapore with a **5 GB persistent disk** mounted at `/var/data`, where the database and its snapshots live. Render asks for `GITHUB_TOKEN` (and optionally `ANTHROPIC_API_KEY`) when the Blueprint is applied, generates `ADMIN_PASSWORD` (visible under the service's Environment tab), checks `/api/health`, and redeploys on every push to `main`. Render also snapshots the disk daily.
+`render.yaml` runs the app on Render's **free plan**. The free plan has no persistent disk, so:
 
-A persistent disk needs a paid instance: Starter is about **$7/month** plus **$1.25/month** for the disk. Only one instance can use the disk, which matches the app (one SQLite file, one background queue).
+- every snapshot (every 15 minutes while data changes, and one at shutdown) is gzipped and uploaded to a release in a **private GitHub repository** (`BACKUP_REPO`) by `scripts/github-backup.mjs`; the newest 30 are kept;
+- on start, `github-backup.mjs restore` downloads the newest healthy snapshot before the app opens the database, and refuses to start empty if GitHub can't be reached;
+- `.github/workflows/keep-awake.yml` pings `/api/health` every 10 minutes (set the repository variable `SITE_URL`), so the free instance doesn't sleep and background ranking keeps running.
+
+`GITHUB_TOKEN` must be a fine-grained token with **Contents: read and write** on the backup repository (public data needs no extra permission). Render asks for it and for `ADMIN_PASSWORD` when the Blueprint is applied.
 
 ## Capacity
 

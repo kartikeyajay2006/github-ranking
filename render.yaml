@@ -1,34 +1,32 @@
-# Render Blueprint: one web service with a persistent disk for the SQLite database.
-# Deploy: https://render.com/deploy?repo=https://github.com/kartikeyajay2006/github-ranking
-# A persistent disk needs a paid instance (Starter, ~$7/month, plus $0.25/GB/month for the disk).
+# Render Blueprint on the FREE plan (no card). The free plan has no persistent disk, so the database is
+# copied to a private GitHub repo (BACKUP_REPO) every 15 minutes and at shutdown, and restored on start.
+# A GitHub Actions job (.github/workflows/keep-awake.yml) pings the site so the free instance never sleeps.
 services:
   - type: web
     name: github-ranking
     runtime: node
-    plan: starter
+    plan: free
     region: singapore
     branch: main
     autoDeploy: true
     buildCommand: npm ci --no-audit --no-fund && npm run build
-    startCommand: npm start
+    startCommand: node scripts/github-backup.mjs restore && npm start
     healthCheckPath: /api/health
-    disk:
-      name: data
-      mountPath: /var/data
-      sizeGB: 5
     envVars:
       - key: NODE_VERSION
         value: "24"
       - key: NEXT_TELEMETRY_DISABLED
         value: "1"
-      - key: DATABASE_PATH
-        value: /var/data/ranking.db
-      - key: BACKUP_DIR
-        value: /var/data/backups
       - key: ANALYSIS_TTL_HOURS
         value: "12"
+      - key: BACKUP_REPO
+        value: kartikeyajay2006/github-ranking-data
+      - key: BACKUP_COMMAND
+        value: node scripts/github-backup.mjs push "$1"
+      - key: BACKUP_INTERVAL_HOURS
+        value: "0.25"
       - key: ADMIN_PASSWORD
-        generateValue: true
+        sync: false
       - key: GITHUB_TOKEN
         sync: false
       - key: ANTHROPIC_API_KEY

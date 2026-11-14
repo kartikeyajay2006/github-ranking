@@ -1,5 +1,5 @@
 import "server-only";
-import { execFile } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, renameSync, statSync, unlinkSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -71,7 +71,7 @@ function offsite(file: string) {
 let lastBackupAt = 0;
 
 /** Takes a verified snapshot of the live database. Returns its path, or null when skipped or failed. */
-export function backupNow(conn: DatabaseSync, reason: string, { minIntervalMs = 0 } = {}): string | null {
+export function backupNow(conn: DatabaseSync, reason: string, { minIntervalMs = 0, copyOffsite = true } = {}): string | null {
   if (Date.now() - lastBackupAt < minIntervalMs) return null;
   const dir = backupDir();
   mkdirSync(dir, { recursive: true });
@@ -89,7 +89,7 @@ export function backupNow(conn: DatabaseSync, reason: string, { minIntervalMs = 
   }
   lastBackupAt = Date.now();
   rotate();
-  offsite(file);
+  if (copyOffsite) offsite(file);
   return file;
 }
 
@@ -118,6 +118,19 @@ export function recoverIfCorrupt(): string | null {
   conn.exec(`VACUUM INTO '${db.replace(/'/g, "''")}'`);
   conn.close();
   return `Database failed its integrity check; moved to ${basename(aside)} and restored from ${basename(good.file)}.`;
+}
+
+/**
+ * At shutdown, on hosts without a persistent disk (BACKUP_COMMAND set): take a last snapshot and copy it off
+ * the machine synchronously, so a restart loses nothing.
+ */
+export function shutdownBackup(conn: DatabaseSync) {
+  const cmd = process.env.BACKUP_COMMAND;
+  if (!cmd || process.env.BACKUP_DISABLED === "1" || !changedSinceLastBackup()) return;
+  const file = backupNow(conn, "shutdown", { copyOffsite: false });
+  if (!file) return;
+  const run = spawnSync("/bin/sh", ["-c", cmd, "backup", file], { timeout: 25_000, stdio: "inherit" });
+  if (run.status !== 0) console.error(`[backup] shutdown copy of ${basename(file)} failed`);
 }
 
 const state = globalThis as unknown as { __backupTimer?: NodeJS.Timeout };
