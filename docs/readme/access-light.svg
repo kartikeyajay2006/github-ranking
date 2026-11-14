@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 150" width="1200" height="150" role="img" aria-label="No public demo. For access or your own instance, email kartikeya2006jay@gmail.com">
+<defs><clipPath id="c"><rect width="1200" height="150" rx="14"/></clipPath>
+<linearGradient id="scan" x1="0" x2="1"><stop offset="0" stop-color="#d9541f" stop-opacity="0"/><stop offset="0.5" stop-color="#d9541f" stop-opacity="0.22"/><stop offset="1" stop-color="#d9541f" stop-opacity="0"/></linearGradient></defs>
+<g clip-path="url(#c)">
+<rect width="1200" height="150" fill="#ffffff"/>
+<circle r="2.1" cy="84.4" fill="#2a78d6" opacity="0.55">
+<animate attributeName="cx" values="-10;1210" dur="8.6s" begin="-5s" repeatCount="indefinite"/></circle><circle r="1.8" cy="41.3" fill="#97bdec" opacity="0.55">
+<animate attributeName="cx" values="-10;1210" dur="5.1s" begin="-5s" repeatCount="indefinite"/></circle><circle r="1.8" cy="125.9" fill="#2a78d6" opacity="0.55">
+<animate attributeName="cx" values="-10;1210" dur="7.5s" begin="-3.9s" repeatCount="indefinite"/></circle><circle r="1.2" cy="85.5" fill="#2a78d6" opacity="0.55">
+<animate attributeName="cx" values="-10;1210" dur="7.7s" begin="-4.8s" repeatCount="indefinite"/></circle><circle r="2.5" cy="129.9" fill="#1a58a6" opacity="0.55">
+<animate attributeName="cx" values="-10;1210" dur="9s" begin="-4.2s" repeatCount="indefinite"/></circle><circle r="1.7" cy="84.2" fill="#2a78d6" opacity="0.55">
+<animate attributeName="cx" values="-10;1210" dur="7.2s" begin="-6.6s" repeatCount="indefinite"/></circle><circle r="1.4" cy="23.2" fill="#2a78d6" opacity="0.55">
+<animate attributeName="cx" values="-10;1210" dur="8.5s" begin="-0.3s" repeatCount="indefinite"/></circle><circle r="2" cy="95.1" fill="#0d3a72" opacity="0.55">
+<animate attributeName="cx" values="-10;1210" dur="9.1s" begin="-3s" repeatCount="indefinite"/></circle><circle r="2.6" cy="90.1" fill="#97bdec" opacity="0.55">
+<animate attributeName="cx" values="-10;1210" dur="7.8s" begin="-4.7s" repeatCount="indefinite"/></circle><circle r="2.5" cy="51.8" fill="#5b98e0" opacity="0.55">
+<animate attributeName="cx" values="-10;1210" dur="5.4s" begin="-0.3s" repeatCount="indefinite"/></circle><circle r="2.1" cy="60.1" fill="#1a58a6" opacity="0.55">
+<animate attributeName="cx" values="-10;1210" dur="5.3s" begin="-1.2s" repeatCount="indefinite"/></circle><circle r="1.8" cy="64.7" fill="#97bdec" opacity="0.55">
+<animate attributeName="cx" values="-10;1210" dur="7.9s" begin="-3.6s" repeatCount="indefinite"/></circle><circle r="1.7" cy="80.9" fill="#0d3a72" opacity="0.55">
+<animate attributeName="cx" values="-10;1210" dur="6.7s" begin="-1.4s" repeatCount="indefinite"/></circle><circle r="2.4" cy="112.3" fill="#1a58a6" opacity="0.55">
+<animate attributeName="cx" values="-10;1210" dur="9.8s" begin="-1.4s" repeatCount="indefinite"/></circle><circle r="2" cy="124.5" fill="#0d3a72" opacity="0.55">
+<animate attributeName="cx" values="-10;1210" dur="7.7s" begin="-3.5s" repeatCount="indefinite"/></circle><circle r="2.1" cy="116.2" fill="#2a78d6" opacity="0.55">
+<animate attributeName="cx" values="-10;1210" dur="5.2s" begin="-5.2s" repeatCount="indefinite"/></circle><circle r="1.2" cy="70.3" fill="#1a58a6" opacity="0.55">
+<animate attributeName="cx" values="-10;1210" dur="6.9s" begin="-0.6s" repeatCount="indefinite"/></circle><circle r="2.6" cy="75.1" fill="#0d3a72" opacity="0.55">
+<animate attributeName="cx" values="-10;1210" dur="8.7s" begin="-6.3s" repeatCount="indefinite"/></circle><circle r="1.7" cy="58.7" fill="#2a78d6" opacity="0.55">
+<animate attributeName="cx" values="-10;1210" dur="6.8s" begin="-4.4s" repeatCount="indefinite"/></circle><circle r="2.5" cy="81.1" fill="#0d3a72" opacity="0.55">
+<animate attributeName="cx" values="-10;1210" dur="8.8s" begin="-7.5s" repeatCount="indefinite"/></circle><circle r="1.2" cy="113.3" fill="#0d3a72" opacity="0.55">
+<animate attributeName="cx" values="-10;1210" dur="7.2s" begin="-2.7s" repeatCount="indefinite"/></circle><circle r="1.7" cy="51.9" fill="#5b98e0" opacity="0.55">
+<animate attributeName="cx" values="-10;1210" dur="5s" begin="-2.2s" repeatCount="indefinite"/></circle><circle r="1.5" cy="53.9" fill="#0d3a72" opacity="0.55">
+<animate attributeName="cx" values="-10;1210" dur="6.8s" begin="-6.1s" repeatCount="indefinite"/></circle><circle r="2.3" cy="51" fill="#1a58a6" opacity="0.55">
+<animate attributeName="cx" values="-10;1210" dur="7.9s" begin="-3.4s" repeatCount="indefinite"/></circle><circle r="2.3" cy="20.9" fill="#2a78d6" opacity="0.55">
+<animate attributeName="cx" values="-10;1210" dur="6.1s" begin="-3.5s" repeatCount="indefinite"/></circle><circle r="1.2" cy="128.3" fill="#1a58a6" opacity="0.55">
+<animate attributeName="cx" values="-10;1210" dur="9.7s" begin="-4.5s" repeatCount="indefinite"/></circle>
+<rect y="0" width="220" height="150" fill="url(#scan)"><animate attributeName="x" values="-240;1220" dur="4.5s" repeatCount="indefinite"/></rect>
+</g>
+<rect x="0.5" y="0.5" width="1199" height="149" rx="14" fill="none" stroke="#dcdbd5"/>
+<rect x="0.5" y="0.5" width="1199" height="149" rx="14" fill="none" stroke="#d9541f" stroke-width="1.5" stroke-dasharray="80 2620">
+<animate attributeName="stroke-dashoffset" values="0;-2700" dur="6s" repeatCount="indefinite"/></rect>
+<g transform="translate(44 44)">
+<rect width="56" height="56" rx="12" fill="#f6f6f3" stroke="#dcdbd5"/>
+<path d="M18 26v-5a10 10 0 0 1 20 0v5" fill="none" stroke="#d9541f" stroke-width="2.4" stroke-linecap="round"/>
+<rect x="14" y="26" width="28" height="20" rx="4" fill="#d9541f"/>
+<circle cx="28" cy="35" r="2.6" fill="#f6f6f3"><animate attributeName="opacity" values="1;0.2;1" dur="1.6s" repeatCount="indefinite"/></circle>
+</g>
+<text x="124" y="66" font-family="ui-monospace,'SFMono-Regular','JetBrains Mono',Menlo,Consolas,monospace" font-size="11" letter-spacing="2.2" fill="#d9541f">NO PUBLIC LINK · PRIVATE INSTANCE</text>
+<text x="124" y="98" font-family="'Iowan Old Style','Palatino Linotype',Palatino,Georgia,'Times New Roman',serif" font-size="27" fill="#0b0b0b">Want access or your own instance? <tspan fill="#2a78d6" font-family="ui-monospace,'SFMono-Regular','JetBrains Mono',Menlo,Consolas,monospace" font-size="22">kartikeya2006jay@gmail.com</tspan><tspan fill="#2a78d6" font-family="ui-monospace,'SFMono-Regular','JetBrains Mono',Menlo,Consolas,monospace" font-size="22">▍<animate attributeName="opacity" values="1;1;0;0" keyTimes="0;0.5;0.5;1" dur="1s" repeatCount="indefinite"/></tspan></text>
+<text x="124" y="122" font-family="-apple-system,'Segoe UI','Helvetica Neue',Arial,sans-serif" font-size="12.5" fill="#77766f">The live ranking holds real applicant data, so it is shared privately. Click to email.</text>
+</svg>
