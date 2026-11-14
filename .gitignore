@@ -16,3 +16,4 @@ data/backups/
 data/*.corrupt-*
 *.restoring
 .compose.env
+data/*.log

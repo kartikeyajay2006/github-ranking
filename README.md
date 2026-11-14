@@ -232,7 +232,7 @@ All data lives in one SQLite file (`DATABASE_PATH`). It is protected in layers:
 | Verification | Every snapshot passes an integrity check before it is kept; a failing one is discarded and logged |
 | Rotation | The last 24 snapshots plus one per day for 14 days (`BACKUP_KEEP`, `BACKUP_KEEP_DAYS`; folder `BACKUP_DIR`, default `data/backups`) |
 | Compact storage | Evidence is stored Brotli-compressed, about 7× smaller, so 15,000 people take roughly 100–300 MB |
-| Off-machine copies | Optional `BACKUP_COMMAND` runs after each snapshot with its path as `$1`, e.g. `aws s3 cp "$1" s3://my-bucket/ranking/` |
+| Off-machine copies | Optional `BACKUP_COMMAND` runs after each snapshot with its path as `$1`, e.g. `rclone copy "$1" remote:ranking/` |
 | Self-repair | On start-up, a database that fails its integrity check is moved aside and the newest healthy snapshot is restored automatically |
 | Clean shutdown | The write-ahead log is folded into the main file on exit, so the `.db` file alone is always a complete copy |
 
@@ -268,23 +268,13 @@ SITE_ADDRESS=ranking.example.com docker compose -f docker-compose.prod.yml up -d
 
 The image is a Next.js standalone server on Node 24 (~45 MB of app files). It runs as a non-root user, has a health check on `/api/health`, and checkpoints the database cleanly on shutdown.
 
-### AWS (one command)
+### Render (one click)
 
-```bash
-aws login --profile neyvro
-GITHUB_TOKEN=<token> deploy/aws/deploy.sh      # first deploy, ~5 minutes
-deploy/aws/update.sh                            # later: pull main, snapshot, rebuild, restart
-```
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/kartikeyajay2006/github-ranking)
 
-`deploy.sh` is safe to re-run. In `ap-south-1` it creates:
+`render.yaml` describes one web service in Singapore with a **5 GB persistent disk** mounted at `/var/data`, where the database and its snapshots live. Render asks for `GITHUB_TOKEN` (and optionally `ANTHROPIC_API_KEY`) when the Blueprint is applied, generates `ADMIN_PASSWORD` (visible under the service's Environment tab), checks `/api/health`, and redeploys on every push to `main`. Render also snapshots the disk daily.
 
-- one **t4g.small** Graviton instance (Amazon Linux 2023), managed through SSM, with no SSH port open;
-- a **30 GB encrypted disk that is kept even if the instance is terminated**;
-- a fixed Elastic IP and an HTTPS address `https://<ip>.sslip.io`, with a Let's Encrypt certificate via Caddy;
-- a private, **versioned, encrypted S3 bucket**: snapshots are synced to it every 15 minutes, and a rebuilt server restores the newest one automatically;
-- SSM SecureString parameters for `GITHUB_TOKEN` and a generated `ADMIN_PASSWORD`, which the script prints at the end.
-
-Cost is roughly **$15/month**.
+A persistent disk needs a paid instance: Starter is about **$7/month** plus **$1.25/month** for the disk. Only one instance can use the disk, which matches the app (one SQLite file, one background queue).
 
 ## Capacity
 

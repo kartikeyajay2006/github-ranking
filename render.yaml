@@ -1,0 +1,35 @@
+# Render Blueprint: one web service with a persistent disk for the SQLite database.
+# Deploy: https://render.com/deploy?repo=https://github.com/kartikeyajay2006/github-ranking
+# A persistent disk needs a paid instance (Starter, ~$7/month, plus $0.25/GB/month for the disk).
+services:
+  - type: web
+    name: github-ranking
+    runtime: node
+    plan: starter
+    region: singapore
+    branch: main
+    autoDeploy: true
+    buildCommand: npm ci --no-audit --no-fund && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    disk:
+      name: data
+      mountPath: /var/data
+      sizeGB: 5
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: NEXT_TELEMETRY_DISABLED
+        value: "1"
+      - key: DATABASE_PATH
+        value: /var/data/ranking.db
+      - key: BACKUP_DIR
+        value: /var/data/backups
+      - key: ANALYSIS_TTL_HOURS
+        value: "12"
+      - key: ADMIN_PASSWORD
+        generateValue: true
+      - key: GITHUB_TOKEN
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
