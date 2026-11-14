@@ -276,7 +276,7 @@ The image is a Next.js standalone server on Node 24 (~45 MB of app files). It ru
 
 `render.yaml` runs the app on Render's **free plan**. The free plan has no persistent disk, so:
 
-- every snapshot (every 3 minutes while data changes, and one at shutdown) is gzipped and uploaded to a release in a **private GitHub repository** (`BACKUP_REPO`) by `scripts/github-backup.mjs`; the newest 30 are kept. Each copy is labelled with the start time of the server that made it, so during a deploy the new server's copies always win and the old server stops copying;
+- every snapshot (within a minute of any change, and one at shutdown) is gzipped and uploaded to a release in a **private GitHub repository** (`BACKUP_REPO`) by `scripts/github-backup.mjs`; the newest 30 are kept, plus one per hour for 48 hours and one per day for 30 days. Each copy is labelled with the start time of the server that made it, so during a deploy the new server's copies always win and the old server stops copying;
 - on start, `github-backup.mjs restore` downloads the newest healthy snapshot before the app opens the database, and refuses to start empty if GitHub can't be reached;
 - `.github/workflows/keep-awake.yml` pings `/api/health` every 10 minutes (set the repository variable `SITE_URL`), so the free instance doesn't sleep and background ranking keeps running.
 

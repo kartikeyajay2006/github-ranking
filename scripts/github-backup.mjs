@@ -2,21 +2,23 @@
 // For hosts without a persistent disk (e.g. Render's free plan): the app pushes every snapshot,
 // and a fresh machine restores the newest one before it starts.
 //
-//   node scripts/github-backup.mjs push <file>   gzip + upload; keeps the newest BACKUP_REMOTE_KEEP (default 30)
+//   node scripts/github-backup.mjs push <file>   gzip + upload; keeps the newest BACKUP_REMOTE_KEEP (default 30), one per hour for 48 h, one per day for 30 days
 //   node scripts/github-backup.mjs restore       if the database file is missing, download the newest snapshot
 //   node scripts/github-backup.mjs list
 //
 // Env: BACKUP_REPO=owner/name (private), BACKUP_TOKEN or GITHUB_TOKEN with Contents read/write on it.
-import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { createReadStream, createWriteStream, existsSync, mkdirSync, readFileSync, renameSync, unlinkSync } from "node:fs";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { hostname } from "node:os";
 import { basename, dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { gunzipSync, gzipSync } from "node:zlib";
+import { createGunzip, createGzip } from "node:zlib";
 
 const REPO = process.env.BACKUP_REPO;
 const TOKEN = process.env.BACKUP_TOKEN || process.env.GITHUB_TOKEN;
 const KEEP = Math.max(3, Number(process.env.BACKUP_REMOTE_KEEP ?? 30));
-const TAG = "db-snapshots";
+const TAG = process.env.BACKUP_TAG || "db-snapshots";
 const DB = resolve(process.env.DATABASE_PATH || "data/ranking.db");
 const log = (...a) => console.log("[github-backup]", ...a);
 
@@ -51,9 +53,15 @@ async function release(create) {
 }
 
 async function assets(id) {
-  const r = await api(`/repos/${REPO}/releases/${id}/assets?per_page=100`);
-  if (!r.ok) throw new Error(`assets: HTTP ${r.status}`);
-  return (await r.json()).sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id - a.id);
+  const all = [];
+  for (let page = 1; ; page++) {
+    const r = await api(`/repos/${REPO}/releases/${id}/assets?per_page=100&page=${page}`);
+    if (!r.ok) throw new Error(`assets: HTTP ${r.status}`);
+    const batch = await r.json();
+    all.push(...batch);
+    if (batch.length < 100) break;
+  }
+  return all.sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id - a.id);
 }
 
 async function push(file) {
@@ -61,14 +69,28 @@ async function push(file) {
   const newer = (await assets(rel.id)).find((a) => bootOf(a.name) > BOOT);
   if (newer) return log(`a newer server is running (${newer.name}); this one no longer copies its data`);
   const name = `${basename(file, ".db")}--b${BOOT}-${INSTANCE}.db.gz`;
-  const body = gzipSync(readFileSync(file));
+  // Compress through a temporary file: memory stays at the compressed size, not database + compressed.
+  const gz = `${file}.gz`;
+  await pipeline(createReadStream(file), createGzip({ level: 6 }), createWriteStream(gz));
+  const body = readFileSync(gz);
+  unlinkSync(gz);
   const up = await api(`https://uploads.github.com/repos/${REPO}/releases/${rel.id}/assets?name=${encodeURIComponent(name)}`, {
     method: "POST",
     headers: { "content-type": "application/gzip" },
     body,
   });
   if (!up.ok && up.status !== 422) throw new Error(`upload: HTTP ${up.status} ${await up.text()}`);
-  for (const old of (await assets(rel.id)).slice(KEEP)) await api(`/repos/${REPO}/releases/assets/${old.id}`, { method: "DELETE" });
+  // Keep the newest KEEP, plus the newest of each hour for 48 hours and of each day for 30 days.
+  const all = await assets(rel.id);
+  const keep = new Set(all.slice(0, KEEP).map((a) => a.id));
+  const seen = new Set();
+  for (const a of all) {
+    const age = Date.now() - Date.parse(a.created_at);
+    const hour = `h${a.created_at.slice(0, 13)}`, day = `d${a.created_at.slice(0, 10)}`;
+    if (age < 48 * 3_600_000 && !seen.has(hour)) (seen.add(hour), keep.add(a.id));
+    if (age < 30 * 86_400_000 && !seen.has(day)) (seen.add(day), keep.add(a.id));
+  }
+  for (const old of all) if (!keep.has(old.id)) await api(`/repos/${REPO}/releases/assets/${old.id}`, { method: "DELETE" });
   log(`pushed ${name} (${(body.length / 1024).toFixed(0)} KB)`);
 }
 
@@ -94,7 +116,7 @@ async function restore() {
     if (!r.ok) throw new Error(`download ${a.name}: HTTP ${r.status}`);
     const tmp = `${DB}.restoring`;
     mkdirSync(dirname(DB), { recursive: true });
-    writeFileSync(tmp, gunzipSync(Buffer.from(await r.arrayBuffer())));
+    await pipeline(Readable.fromWeb(r.body), createGunzip(), createWriteStream(tmp));
     if (healthy(tmp)) {
       renameSync(tmp, DB);
       return log(`restored ${a.name}`);

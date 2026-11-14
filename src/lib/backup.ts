@@ -141,9 +141,12 @@ const state = globalThis as unknown as { __backupTimer?: NodeJS.Timeout };
 export function scheduleBackups(conn: DatabaseSync) {
   if (state.__backupTimer || process.env.BACKUP_DISABLED === "1") return;
   if (changedSinceLastBackup()) backupNow(conn, "startup");
-  const hours = Math.max(1 / 60, Number(process.env.BACKUP_INTERVAL_HOURS ?? 1));
+  // With BACKUP_COMMAND (a host without a persistent disk), check every 20 seconds and copy within a minute of
+  // any change, so a restart or deploy loses as little as possible.
+  const hours = process.env.BACKUP_COMMAND ? 1 / 180 : Math.max(1 / 60, Number(process.env.BACKUP_INTERVAL_HOURS ?? 1));
+  const minIntervalMs = process.env.BACKUP_COMMAND ? 60_000 : 0;
   state.__backupTimer = setInterval(() => {
-    if (changedSinceLastBackup()) backupNow(conn, "hourly");
+    if (changedSinceLastBackup()) backupNow(conn, "hourly", { minIntervalMs });
   }, hours * 3_600_000);
   state.__backupTimer.unref();
 }
