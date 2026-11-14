@@ -15,7 +15,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 }
 
 const METHOD = { table: "read as a table", text: "read as a document", ai: "read with AI extraction" } as Record<string, string>;
-const PER_HOUR = 400; // measured: ~11 GitHub API points per person against 5,000 points an hour
+const PER_HOUR = 800; // measured: ~5 GitHub API points per person against 5,000 points an hour, with headroom
 
 export default async function ImportPage({ params }: Props) {
   await connection();

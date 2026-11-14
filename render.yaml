@@ -1,5 +1,5 @@
 # Render Blueprint on the FREE plan (no card). The free plan has no persistent disk, so the database is
-# copied to a private GitHub repo (BACKUP_REPO) every 15 minutes and at shutdown, and restored on start.
+# copied to a private GitHub repo (BACKUP_REPO) every 3 minutes while it changes, and at shutdown, and restored on start.
 # A GitHub Actions job (.github/workflows/keep-awake.yml) pings the site so the free instance never sleeps.
 services:
   - type: web
@@ -24,7 +24,7 @@ services:
       - key: BACKUP_COMMAND
         value: node scripts/github-backup.mjs push "$1"
       - key: BACKUP_INTERVAL_HOURS
-        value: "0.25"
+        value: "0.05" # every 3 minutes while data changes
       - key: ADMIN_PASSWORD
         sync: false
       - key: GITHUB_TOKEN

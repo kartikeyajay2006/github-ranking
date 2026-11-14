@@ -8,6 +8,7 @@
 //
 // Env: BACKUP_REPO=owner/name (private), BACKUP_TOKEN or GITHUB_TOKEN with Contents read/write on it.
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { hostname } from "node:os";
 import { basename, dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { gunzipSync, gzipSync } from "node:zlib";
@@ -18,6 +19,14 @@ const KEEP = Math.max(3, Number(process.env.BACKUP_REMOTE_KEEP ?? 30));
 const TAG = "db-snapshots";
 const DB = resolve(process.env.DATABASE_PATH || "data/ranking.db");
 const log = (...a) => console.log("[github-backup]", ...a);
+
+// Hosts like Render start the new server before stopping the old one. Each snapshot is labelled with the
+// start time of the server that made it; the newest server's line always wins, and an older server stops
+// copying as soon as a newer one has pushed, so its late writes can't overwrite newer data.
+const BOOT = Number(process.env.BACKUP_INSTANCE_BOOT || 0);
+const INSTANCE = (process.env.RENDER_INSTANCE_ID || hostname()).replace(/[^a-z0-9]/gi, "").slice(-12) || "local";
+const bootOf = (name) => Number(/--b(\d+)-/.exec(name)?.[1] ?? 0);
+const newestFirst = (a, b) => bootOf(b.name) - bootOf(a.name) || b.created_at.localeCompare(a.created_at) || b.id - a.id;
 
 function api(path, init = {}) {
   const url = path.startsWith("https://") ? path : `https://api.github.com${path}`;
@@ -49,7 +58,9 @@ async function assets(id) {
 
 async function push(file) {
   const rel = await release(true);
-  const name = `${basename(file, ".db")}.db.gz`;
+  const newer = (await assets(rel.id)).find((a) => bootOf(a.name) > BOOT);
+  if (newer) return log(`a newer server is running (${newer.name}); this one no longer copies its data`);
+  const name = `${basename(file, ".db")}--b${BOOT}-${INSTANCE}.db.gz`;
   const body = gzipSync(readFileSync(file));
   const up = await api(`https://uploads.github.com/repos/${REPO}/releases/${rel.id}/assets?name=${encodeURIComponent(name)}`, {
     method: "POST",
@@ -77,6 +88,7 @@ async function restore() {
   const rel = await release(false);
   const list = rel ? await assets(rel.id) : [];
   if (!list.length) return log("no snapshots yet; starting with an empty database");
+  list.sort(newestFirst);
   for (const a of list.slice(0, 5)) {
     const r = await api(`/repos/${REPO}/releases/assets/${a.id}`, { headers: { accept: "application/octet-stream" } });
     if (!r.ok) throw new Error(`download ${a.name}: HTTP ${r.status}`);

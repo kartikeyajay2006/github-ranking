@@ -20,6 +20,8 @@ export const backupDir = () => resolve(/*turbopackIgnore: true*/ process.env.BAC
 const KEEP_RECENT = Math.max(1, Number(process.env.BACKUP_KEEP ?? 24));
 const KEEP_DAILY_DAYS = Math.max(0, Number(process.env.BACKUP_KEEP_DAYS ?? 14));
 const PREFIX = "ranking-";
+// When this server started; passed to BACKUP_COMMAND so off-site copies can tell servers apart.
+process.env.BACKUP_INSTANCE_BOOT ??= String(Date.now());
 
 const stamp = (d = new Date()) => d.toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "Z").replace("T", "-");
 
@@ -139,7 +141,7 @@ const state = globalThis as unknown as { __backupTimer?: NodeJS.Timeout };
 export function scheduleBackups(conn: DatabaseSync) {
   if (state.__backupTimer || process.env.BACKUP_DISABLED === "1") return;
   if (changedSinceLastBackup()) backupNow(conn, "startup");
-  const hours = Math.max(0.25, Number(process.env.BACKUP_INTERVAL_HOURS ?? 1));
+  const hours = Math.max(1 / 60, Number(process.env.BACKUP_INTERVAL_HOURS ?? 1));
   state.__backupTimer = setInterval(() => {
     if (changedSinceLastBackup()) backupNow(conn, "hourly");
   }, hours * 3_600_000);
