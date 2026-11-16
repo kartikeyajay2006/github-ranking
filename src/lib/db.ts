@@ -74,6 +74,12 @@ const SCHEMA = /* SQL */ `
   );
 
   CREATE INDEX IF NOT EXISTS import_teams_status ON import_teams(job_id, status);
+
+  CREATE TABLE IF NOT EXISTS project_cache (
+    key          TEXT PRIMARY KEY,
+    evidence     BLOB NOT NULL,
+    fetched_at   INTEGER NOT NULL
+  );
 `;
 
 /** Additive migrations for databases created by earlier versions. */
@@ -83,12 +89,24 @@ function migrate(conn: DatabaseSync) {
     !columns("teams").includes("job_id") ||
     !columns("profiles").includes("summary") ||
     !columns("teams").includes("absent") ||
-    !columns("import_jobs").includes("missing_policy");
+    !columns("import_jobs").includes("missing_policy") ||
+    !columns("import_jobs").includes("project_weight") ||
+    !columns("import_teams").includes("breakdown");
   if (pending && (conn.prepare("SELECT COUNT(*) AS n FROM profiles").get() as { n: number }).n > 0) backupNow(conn, "pre-migration");
   if (!columns("teams").includes("job_id")) conn.exec("ALTER TABLE teams ADD COLUMN job_id TEXT");
   if (!columns("profiles").includes("summary")) conn.exec("ALTER TABLE profiles ADD COLUMN summary TEXT");
   if (!columns("teams").includes("absent")) conn.exec("ALTER TABLE teams ADD COLUMN absent TEXT");
   if (!columns("import_jobs").includes("missing_policy")) conn.exec("ALTER TABLE import_jobs ADD COLUMN missing_policy TEXT NOT NULL DEFAULT 'zero'");
+  if (!columns("import_jobs").includes("project_weight")) {
+    conn.exec("ALTER TABLE import_jobs ADD COLUMN project_weight REAL NOT NULL DEFAULT 0.3");
+    conn.exec("ALTER TABLE import_jobs ADD COLUMN project_missing TEXT NOT NULL DEFAULT 'github'");
+    conn.exec("ALTER TABLE import_jobs ADD COLUMN withdrawn_policy TEXT NOT NULL DEFAULT 'skip'");
+  }
+  if (!columns("import_teams").includes("breakdown")) {
+    conn.exec("ALTER TABLE import_teams ADD COLUMN breakdown TEXT");
+    conn.exec("ALTER TABLE import_teams ADD COLUMN github_score REAL");
+    conn.exec("ALTER TABLE import_teams ADD COLUMN project_score REAL");
+  }
   conn.exec("CREATE INDEX IF NOT EXISTS teams_job ON teams(job_id)");
 }
 

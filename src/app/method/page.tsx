@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { DIMENSION_LABELS, DIMENSION_WEIGHTS, METHODOLOGY_VERSION, PORTFOLIO_WEIGHTS } from "@/lib/scoring/individual";
 import { pct } from "@/components/ui";
+import { PROJECT_METHODOLOGY, PROJECT_WEIGHTS } from "@/lib/scoring/project";
 
 export const metadata: Metadata = { title: "Method" };
 
@@ -15,6 +16,7 @@ const SECTIONS = [
   ["breadth", "Engineering breadth"],
   ["split", "Own & team vs. outside"],
   ["teams", "Teams"],
+  ["best-project", "Best project (imports)"],
   ["limits", "Limits"],
 ] as const;
 
@@ -349,6 +351,31 @@ export default function MethodPage() {
               23.3. Five: 24 / 19 × 4. Without a designated lead the team falls back to an equal average.
             </li>
             <li>Members can be added at any time. Adding someone recalculates the weights; it never changes anyone&rsquo;s own score.</li>
+          </ul>
+
+          <h2 id="best-project">Best project (imports)</h2>
+          <p>
+            When an uploaded sheet has a best-project column, each person&rsquo;s named repository is graded on its own (methodology {PROJECT_METHODOLOGY}) and
+            combined with their GitHub profile score: by default <b>70% profile + 30% best project</b>. The weight can be changed on the import at any time;
+            every team is re-scored instantly from stored results.
+          </p>
+          <ul>
+            <li>
+              Build substance ({pct(PROJECT_WEIGHTS.substance)}): code volume, commit history, and how many distinct weeks the applicant worked on it. Code that
+              arrived in one or two commits counts less than code grown over a history (full credit from about 25 commits).
+            </li>
+            <li>Engineering quality ({pct(PROJECT_WEIGHTS.engineering)}): tests, CI, README depth, licence, documentation; scaled by the same history factor.</li>
+            <li>Completeness ({pct(PROJECT_WEIGHTS.completeness)}): a live demo linked from the repository, description, topics, releases, recent work.</li>
+            <li>Recognition ({pct(PROJECT_WEIGHTS.recognition)}): stars and forks, on a saturating curve.</li>
+            <li>
+              Authorship: the grade is multiplied by how much of the default branch the applicant wrote. Half or more keeps 100%, a quarter 65%, none 30%.
+              Forks count only the applicant&rsquo;s own commits. If commits can&rsquo;t be attributed (an unlinked e-mail) on a repository they own, a 60% share is
+              assumed.
+            </li>
+            <li>
+              No gradable project (blank, a website, a profile link, a private repository): the person is scored on their GitHub profile alone, or the project
+              counts as 0 if the import is set that way.
+            </li>
           </ul>
 
           <h2 id="limits">Limits</h2>

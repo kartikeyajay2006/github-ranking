@@ -1,6 +1,8 @@
 import "server-only";
 import { analyzeMany } from "../analyze";
-import { rateLimitSnapshot } from "../github/client";
+import { GitHubError, rateLimitSnapshot } from "../github/client";
+import { analyzeProject, type ProjectResult } from "../project";
+import { type MemberBreakdown, teamScore } from "../scoring/project";
 import { addTeamMembers, createTeam, deleteTeam, getSummaries, getTeam, setTeamAbsent, updateTeam } from "../store";
 import { scoreTeam } from "../teamscore";
 import type { AbsentMember } from "../types";
@@ -135,5 +137,60 @@ async function processTeam(team: ImportTeam, job: ImportJob) {
   for (const a of missing)
     warnings.push(`${a.name ?? a.github}: ${a.reason}${countZero ? " (counts as 0)" : " (left out)"}`);
   if (leadMember && !leadOk && !countZero) warnings.push("The lead couldn't be analysed, so members are weighted equally.");
-  finishTeam(job.id, team.idx, { status: "done", teamId, score: result?.total ?? 0, band: result?.band ?? null, warnings });
+
+  // Best projects: each analysed member's own repository, graded on its own evidence.
+  const projects = new Map<string, ProjectResult>();
+  try {
+    await Promise.all(
+      ok.map(async (login) => {
+        const member = team.members.find((m) => m.github?.toLowerCase() === login.toLowerCase());
+        try {
+          projects.set(login.toLowerCase(), await analyzeProject(login, member?.project));
+        } catch (err) {
+          if (err instanceof GitHubError && (err.kind === "rate_limited" || err.kind === "auth")) throw err;
+          projects.set(login.toLowerCase(), { ok: false, link: member?.project ?? null, reason: `Best project couldn't be analysed (${(err as Error).message})` });
+        }
+      }),
+    );
+  } catch (err) {
+    // Out of GitHub quota mid-team: put the team back and wait, as for profiles.
+    deleteTeam(teamId);
+    finishTeam(job.id, team.idx, { status: "pending" });
+    const reset = rateLimitSnapshot()?.resetAt ? Date.parse(rateLimitSnapshot()!.resetAt) : 0;
+    const until = reset > Date.now() ? reset + 5_000 : Date.now() + 60_000;
+    deferRunning(until, `Waiting for GitHub's hourly limit to reset (about ${new Date(until).toISOString().slice(11, 16)} UTC).`);
+    void err;
+    return;
+  }
+
+  const breakdown: MemberBreakdown[] = (result?.members ?? []).map((r) => {
+    const login = ok.find((l) => l.toLowerCase() === r.login.toLowerCase()) ?? null;
+    const source = login
+      ? team.members.find((m) => m.github?.toLowerCase() === login.toLowerCase())
+      : team.members.find((m) => missing.some((a) => a.label === r.login && a.name === m.name && a.github === m.github));
+    const p = login ? projects.get(login.toLowerCase()) : undefined;
+    return {
+      label: r.login,
+      login,
+      name: source?.name ?? null,
+      weight: r.weight,
+      isLeader: r.isLeader,
+      github: r.score,
+      project: p?.ok ? p.assessment.score : null,
+      projectRepo: p?.ok ? p.assessment.repo : null,
+      projectLink: source?.project ?? null,
+      projectNote: p ? (p.ok ? null : p.reason) : login ? null : "No usable GitHub account",
+    };
+  });
+  const scored = teamScore(breakdown, job.projectWeight, job.projectMissing);
+  finishTeam(job.id, team.idx, {
+    status: "done",
+    teamId,
+    score: scored.total,
+    band: scored.band,
+    warnings,
+    breakdown,
+    githubScore: scored.github,
+    projectScore: scored.project,
+  });
 }

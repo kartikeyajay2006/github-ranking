@@ -2085,3 +2085,49 @@ tr:nth-child(-n + 3) .rank {
     opacity: 1;
   }
 }
+
+/* Best-project weighting on the live ranking */
+.weight-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  margin-top: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--surface);
+  font-size: 13.5px;
+}
+.weight-formula b {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--accent-ink);
+}
+.weight-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.weight-controls select.small-input {
+  width: auto;
+  padding-right: 28px;
+}
+
+.person.withdrawn {
+  opacity: 0.5;
+  text-decoration: line-through;
+  text-decoration-color: var(--ink-3);
+}
+.proj-tag {
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+}

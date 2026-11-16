@@ -2,12 +2,15 @@ import "server-only";
 import { randomBytes } from "node:crypto";
 import { backupNow } from "../backup";
 import { db, transaction } from "../db";
+import { type MemberBreakdown, type ProjectMissingPolicy, teamScore } from "../scoring/project";
 import { type ExtractedMember, type ExtractedTeam, leaderOf } from "./extract";
 
 export type JobStatus = "draft" | "running" | "paused" | "done";
 export type LeaderPolicy = "first" | "equal";
 /** What happens to members whose GitHub account is missing or doesn't exist. */
 export type MissingPolicy = "zero" | "skip";
+/** Whether people marked withdrawn in the source are ranked. */
+export type WithdrawnPolicy = "skip" | "keep";
 
 export interface ImportJob {
   id: string;
@@ -17,6 +20,10 @@ export interface ImportJob {
   status: JobStatus;
   leaderPolicy: LeaderPolicy;
   missingPolicy: MissingPolicy;
+  /** Share of each person's score that comes from their best project (0 = GitHub profile only). */
+  projectWeight: number;
+  projectMissing: ProjectMissingPolicy;
+  withdrawnPolicy: WithdrawnPolicy;
   cutoff: number | null;
   note: string | null;
   resumeAt: number | null;
@@ -38,6 +45,10 @@ export interface ImportTeam {
   band: string | null;
   error: string | null;
   finishedAt: number | null;
+  /** Per-member GitHub and best-project scores behind `score`. */
+  breakdown: MemberBreakdown[] | null;
+  githubScore: number | null;
+  projectScore: number | null;
 }
 
 export interface JobCounts {
@@ -57,6 +68,9 @@ interface JobRow {
   status: JobStatus;
   leader_policy: LeaderPolicy;
   missing_policy: MissingPolicy;
+  project_weight: number | null;
+  project_missing: ProjectMissingPolicy | null;
+  withdrawn_policy: WithdrawnPolicy | null;
   cutoff: number | null;
   note: string | null;
   resume_at: number | null;
@@ -78,6 +92,9 @@ interface TeamRowDb {
   band: string | null;
   error: string | null;
   finished_at: number | null;
+  breakdown: string | null;
+  github_score: number | null;
+  project_score: number | null;
 }
 
 const toJob = (r: JobRow): ImportJob => ({
@@ -88,6 +105,9 @@ const toJob = (r: JobRow): ImportJob => ({
   status: r.status,
   leaderPolicy: r.leader_policy,
   missingPolicy: r.missing_policy ?? "zero",
+  projectWeight: r.project_weight ?? 0.3,
+  projectMissing: r.project_missing ?? "github",
+  withdrawnPolicy: r.withdrawn_policy ?? "skip",
   cutoff: r.cutoff,
   note: r.note,
   resumeAt: r.resume_at,
@@ -109,6 +129,9 @@ const toTeam = (r: TeamRowDb): ImportTeam => ({
   band: r.band,
   error: r.error,
   finishedAt: r.finished_at,
+  breakdown: r.breakdown ? (JSON.parse(r.breakdown) as MemberBreakdown[]) : null,
+  githubScore: r.github_score,
+  projectScore: r.project_score,
 });
 
 export function createJob(name: string, source: string, method: string, teams: ExtractedTeam[]): string {
@@ -167,18 +190,67 @@ export function rankedTeams(id: string, since = 0): ImportTeam[] {
   ).map(toTeam);
 }
 
-export function startJob(id: string, policy: LeaderPolicy, cutoff: number | null, missing: MissingPolicy = "zero") {
+export interface StartOptions {
+  policy: LeaderPolicy;
+  cutoff: number | null;
+  missing?: MissingPolicy;
+  projectWeight?: number;
+  projectMissing?: ProjectMissingPolicy;
+  withdrawn?: WithdrawnPolicy;
+}
+
+export function startJob(id: string, opts: StartOptions) {
+  const { policy, cutoff, missing = "zero", projectWeight = 0.3, projectMissing = "github", withdrawn = "skip" } = opts;
   transaction(() => {
-    const teams = jobTeams(id);
-    const setLeader = db().prepare("UPDATE import_teams SET leader = ? WHERE job_id = ? AND idx = ?");
-    for (const t of teams) setLeader.run(leaderOf(t, policy), id, t.idx);
+    const setTeam = db().prepare("UPDATE import_teams SET members = ?, leader = ? WHERE job_id = ? AND idx = ?");
+    const drop = db().prepare("DELETE FROM import_teams WHERE job_id = ? AND idx = ?");
+    for (const t of jobTeams(id)) {
+      // Withdrawn people leave the team; a team with nobody left is not ranked at all.
+      const members = withdrawn === "skip" ? t.members.filter((m) => !m.withdrawn) : t.members;
+      if (!members.length) {
+        drop.run(id, t.idx);
+        continue;
+      }
+      const next = { ...t, members };
+      if (withdrawn === "skip" && members.length < t.members.length && !members.some((m) => m.leader) && t.members.some((m) => m.leader))
+        next.warnings = [...t.warnings, "The marked lead withdrew; the first remaining member leads."];
+      setTeam.run(JSON.stringify(members), leaderOf(next, policy), id, t.idx);
+    }
     db()
       .prepare(
-        "UPDATE import_jobs SET status = 'running', leader_policy = ?, missing_policy = ?, cutoff = ?, started_at = COALESCE(started_at, ?), note = NULL WHERE id = ?",
+        `UPDATE import_jobs SET status = 'running', leader_policy = ?, missing_policy = ?, project_weight = ?, project_missing = ?, withdrawn_policy = ?,
+          cutoff = ?, started_at = COALESCE(started_at, ?), note = NULL WHERE id = ?`,
       )
-      .run(policy, missing, cutoff, Date.now(), id);
+      .run(policy, missing, Math.min(1, Math.max(0, projectWeight)), projectMissing, withdrawn, cutoff, Date.now(), id);
   });
 }
+
+/**
+ * Changes how much the best project counts, at any time: every finished team is re-scored from its stored
+ * per-member breakdown, instantly and without calling GitHub again.
+ */
+export function reweightJob(id: string, projectWeight: number, projectMissing: ProjectMissingPolicy) {
+  const w = Math.min(1, Math.max(0, projectWeight));
+  transaction(() => {
+    db().prepare("UPDATE import_jobs SET project_weight = ?, project_missing = ? WHERE id = ?").run(w, projectMissing, id);
+    const update = db().prepare("UPDATE import_teams SET score = ?, band = ? WHERE job_id = ? AND idx = ?");
+    for (const t of jobTeams(id, "done")) {
+      if (!t.breakdown) continue;
+      const r = teamScore(t.breakdown, w, projectMissing);
+      update.run(r.total, r.band, id, t.idx);
+    }
+  });
+}
+
+/** The import result behind a team page, when the team came from an import. */
+export function importTeamFor(teamId: string): (ImportTeam & { job: ImportJob }) | null {
+  const row = db().prepare("SELECT * FROM import_teams WHERE team_id = ?").get(teamId) as TeamRowDb | undefined;
+  if (!row) return null;
+  const job = getJob(row.job_id);
+  return job ? { ...toTeam(row), job } : null;
+}
+
+
 
 export function setJobStatus(id: string, status: JobStatus, note: string | null = null) {
   db()
@@ -229,11 +301,22 @@ export function claimNext(now = Date.now()): (ImportTeam & { job: ImportJob }) |
 export function finishTeam(
   jobId: string,
   idx: number,
-  result: { status: "done" | "failed" | "pending"; teamId?: string | null; score?: number | null; band?: string | null; error?: string | null; warnings?: string[] },
+  result: {
+    status: "done" | "failed" | "pending";
+    teamId?: string | null;
+    score?: number | null;
+    band?: string | null;
+    error?: string | null;
+    warnings?: string[];
+    breakdown?: MemberBreakdown[] | null;
+    githubScore?: number | null;
+    projectScore?: number | null;
+  },
 ) {
   db()
     .prepare(
-      `UPDATE import_teams SET status = ?, team_id = ?, score = ?, band = ?, error = ?, warnings = COALESCE(?, warnings), finished_at = ?
+      `UPDATE import_teams SET status = ?, team_id = ?, score = ?, band = ?, error = ?, warnings = COALESCE(?, warnings), finished_at = ?,
+          breakdown = ?, github_score = ?, project_score = ?
         WHERE job_id = ? AND idx = ?`,
     )
     .run(
@@ -244,6 +327,9 @@ export function finishTeam(
       result.error ?? null,
       result.warnings ? JSON.stringify(result.warnings) : null,
       result.status === "pending" ? null : Date.now(),
+      result.breakdown ? JSON.stringify(result.breakdown) : null,
+      result.githubScore ?? null,
+      result.projectScore ?? null,
       jobId,
       idx,
     );

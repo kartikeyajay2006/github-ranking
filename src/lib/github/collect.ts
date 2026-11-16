@@ -1,6 +1,7 @@
 import "server-only";
 import { GitHubError, graphql } from "./client";
 import type { ContributionDay, ExternalPullRequest, ProfileEvidence, RepoEvidence, RepoSummary } from "../types";
+import type { ProjectEvidence } from "../scoring/project";
 
 const LOGIN_RE = /^[a-z\d](?:[a-z\d]|-(?=[a-z\d])){0,38}$/i;
 const REPO_SCAN_PAGES = 10; // 1,000 owned repositories
@@ -405,6 +406,68 @@ async function inspectRepos(
     }
   }
   return result;
+}
+
+/* ------------------------------------------------------------- best project ------------------------------------------------------------- */
+
+const PROJECT = /* GraphQL */ `
+  query Project($owner: String!, $name: String!, $login: String!) {
+    user(login: $login) { id login }
+    repository(owner: $owner, name: $name) { ...Inspect isFork isPrivate parent { nameWithOwner } }
+  }
+  ${REPO_FRAGMENT}
+`;
+
+const PROJECT_COMMITS = /* GraphQL */ `
+  query ProjectCommits($owner: String!, $name: String!, $authorId: ID!) {
+    repository(owner: $owner, name: $name) { ...Commits }
+  }
+  ${COMMITS_FRAGMENT}
+`;
+
+/**
+ * One repository named as someone's best project, with their share of its history. Returns null when the
+ * repository doesn't exist or isn't public. A redirected (renamed) repository is followed by GitHub.
+ */
+export async function collectProject(login: string, owner: string, name: string): Promise<ProjectEvidence | null> {
+  const { data } = await graphql<{
+    user: { id: string; login: string } | null;
+    repository: (InspectNode & { isFork: boolean; isPrivate: boolean; parent: { nameWithOwner: string } | null }) | null;
+  }>(PROJECT, { owner, name, login }, { timeoutMs: 20_000 });
+  if (!data.user) throw new GitHubError(`No GitHub user named "${login}".`, "not_found");
+  const node = data.repository;
+  if (!node || node.isPrivate) return null;
+  const repo = readRepo(node);
+  const [realOwner, realName] = node.nameWithOwner.split("/") as [string, string];
+  let source: RepoEvidence["commitsSource"] = "history";
+  try {
+    const { data: c } = await graphql<{ repository: CommitsNode | null }>(PROJECT_COMMITS, { owner: realOwner, name: realName, authorId: data.user.id }, { timeoutMs: 10_000, retries: 1 });
+    const history = c.repository?.defaultBranchRef?.target;
+    repo.commitsTotal = history?.all?.totalCount ?? 0;
+    repo.commitsByOwner = history?.mine?.totalCount ?? 0;
+    let dates = (history?.mine?.nodes ?? []).map((n) => n.committedDate);
+    if (history?.mine?.pageInfo?.hasNextPage && history.mine.pageInfo.endCursor) {
+      const more = await moreCommitDates([{ name: node.nameWithOwner, cursor: history.mine.pageInfo.endCursor }], data.user.id);
+      dates = [...dates, ...(more.get(node.nameWithOwner) ?? [])];
+    }
+    const rhythm = commitRhythm(dates);
+    repo.authoredWeeks = rhythm.weeks;
+    repo.authoredFirst = rhythm.first;
+    repo.authoredLast = rhythm.last;
+  } catch (err) {
+    if (!(err instanceof GitHubError && err.kind === "upstream")) throw err;
+    source = "last-year"; // history too large to walk: authorship can't be measured
+  }
+  repo.commitsSource = source;
+  repo.owned = realOwner.toLowerCase() === data.user.login.toLowerCase();
+  return {
+    ...repo,
+    codeBytes: node.languages.totalSize || 0,
+    isFork: node.isFork,
+    parent: node.parent?.nameWithOwner ?? null,
+    person: data.user.login,
+    fetchedAt: new Date().toISOString(),
+  };
 }
 
 /** Ranks scanned repositories by how likely they are to be the account's most representative work. */

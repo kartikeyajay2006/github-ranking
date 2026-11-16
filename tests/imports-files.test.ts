@@ -17,14 +17,16 @@ const FULL = [
   "Paper[*-,-]",
 ];
 const PEOPLE = FULL.slice(0, 4);
+/** Forms list Rocket twice with different leads: two teams, each shown with its lead. */
+const FORM = ["Rocket · Dan Abramov[*gaearon,tj,antfu]", ...FULL.slice(1), "Rocket · Addy Osmani[*addyosmani]"];
 
 describe("every supported format yields the same teams", () => {
   it.each([
-    ["form.csv", [...FULL, "Rocket (2)[*addyosmani]"]],
-    ["form.xlsx", [...FULL, "Rocket (2)[*addyosmani]"]],
-    ["form-table.html", [...FULL, "Rocket (2)[*addyosmani]"]],
-    ["form-table.docx", [...FULL, "Rocket (2)[*addyosmani]"]],
-    ["form-table.pdf", [...FULL, "Rocket (2)[*addyosmani]"]],
+    ["form.csv", FORM],
+    ["form.xlsx", FORM],
+    ["form-table.html", FORM],
+    ["form-table.docx", FORM],
+    ["form-table.pdf", FORM],
     ["people.csv", PEOPLE],
     ["people.tsv", PEOPLE],
     ["people.xlsx", PEOPLE],

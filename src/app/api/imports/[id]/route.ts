@@ -18,6 +18,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       teamId: t.teamId,
       score: t.score,
       band: t.band,
+      githubScore: t.githubScore,
+      projectScore: t.projectScore,
       lead: lead ? { name: lead.name, github: lead.github } : null,
       members: t.members.filter((m) => m.github).map((m) => m.github!),
       warnings: t.warnings,

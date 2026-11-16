@@ -252,3 +252,20 @@ export function setTeamAbsent(id: string, absent: AbsentMember[]) {
 export function deleteTeam(id: string) {
   db().prepare("DELETE FROM teams WHERE id = ?").run(id);
 }
+
+/* ------------------------------------------------------------ best projects ------------------------------------------------------------ */
+
+/** Cached best-project evidence, keyed by person and repository. */
+export function getProjectEvidence<T>(key: string, maxAgeMs: number): T | null {
+  const row = db().prepare("SELECT evidence, fetched_at FROM project_cache WHERE key = ?").get(key.toLowerCase()) as
+    | { evidence: Uint8Array; fetched_at: number }
+    | undefined;
+  if (!row || Date.now() - row.fetched_at > maxAgeMs) return null;
+  return unpack<T>(row.evidence);
+}
+
+export function saveProjectEvidence(key: string, evidence: unknown) {
+  db()
+    .prepare("INSERT INTO project_cache (key, evidence, fetched_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET evidence = excluded.evidence, fetched_at = excluded.fetched_at")
+    .run(key.toLowerCase(), pack(evidence), Date.now());
+}

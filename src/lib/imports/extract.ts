@@ -16,6 +16,10 @@ export interface ExtractedMember {
   email: string | null;
   github: string | null;
   leader: boolean;
+  /** The link they gave for their best project (a GitHub repository is graded; other links are kept for reference). */
+  project?: string | null;
+  /** Marked withdrawn / cancelled in the source. Left out of ranking by default. */
+  withdrawn?: boolean;
 }
 
 export interface ExtractedTeam {
@@ -60,13 +64,32 @@ export function githubHandles(text: string): string[] {
   return out;
 }
 
-/** A cell that is supposed to hold a GitHub account: URL, @handle or bare handle. */
+/**
+ * A cell that is supposed to hold a GitHub account: profile URL, @handle or bare handle. In such a cell a
+ * repository link or a GitHub Pages address still identifies its owner.
+ */
 export function handleFromCell(value: string): string | null {
   const found = githubHandles(value);
   if (found.length) return found[0]!;
+  const repoOwner = value.match(/github\.com\/([A-Za-z0-9-]{1,39})\/[A-Za-z0-9_.-]+/i)?.[1];
+  if (repoOwner && isLogin(repoOwner)) return repoOwner;
+  const pages = value.match(/(?:^|\/\/|\s)([A-Za-z0-9-]{1,39})\.github\.io\b/i)?.[1];
+  if (pages && isLogin(pages)) return pages;
   const bare = value.trim().replace(/^@/, "").replace(/\/$/, "");
   return bare && !/\s/.test(bare) && isLogin(bare) ? bare : null;
 }
+
+/** The best-project link in a cell: the first GitHub repository if there is one, otherwise the first link. */
+export function projectLink(value: string): string | null {
+  const v = value.trim();
+  if (!v || /^(n\/?a|na|none|nil|-|no|not yet|nothing)$/i.test(v)) return null;
+  const repo = v.match(/(?:https?:\/\/)?(?:www\.)?github\.com\/[A-Za-z0-9-]{1,39}\/[A-Za-z0-9_.-]+[^\s,;|)\]"'<>]*/i)?.[0];
+  if (repo) return repo.startsWith("http") ? repo : `https://${repo}`;
+  const url = v.match(/https?:\/\/[^\s,;|)\]"'<>]+/i)?.[0] ?? v.match(/\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|io|app|dev|tech|in|me|org|net|ai|site|xyz|co)\b[^\s,;|)\]"'<>]*/i)?.[0];
+  return url ? (url.startsWith("http") ? url : `https://${url}`) : null;
+}
+
+const WITHDRAWN = /\b(withdrawn|withdrew|cancell?ed|rejected|dropped|disqualified|left|removed|inactive)\b/i;
 
 export const emailsIn = (text: string) => [...new Set((text.match(EMAIL_RE) ?? []).map((e) => e.toLowerCase()))];
 
@@ -92,50 +115,121 @@ export function cleanName(raw: string): string | null {
   return s;
 }
 
-function dedupe(members: ExtractedMember[]): ExtractedMember[] {
+const lower = (s: string | null | undefined) => (s ? s.trim().toLowerCase() : null);
+const sameName = (a: ExtractedMember, b: ExtractedMember) => !!a.name && !!b.name && lower(a.name) === lower(b.name);
+
+/**
+ * Merges rows that are the same person (same e-mail; or same GitHub with no conflicting name or e-mail; or
+ * the same name with no GitHub). Two different people who typed the same GitHub are kept apart: the first
+ * keeps it, the other is treated as having no usable GitHub, and the team is warned.
+ */
+function dedupe(members: ExtractedMember[], warnings: string[]): ExtractedMember[] {
   const out: ExtractedMember[] = [];
-  for (const m of members) {
-    const same = out.find(
-      (o) =>
-        (m.github && o.github && o.github.toLowerCase() === m.github.toLowerCase()) ||
-        (m.email && o.email && o.email === m.email) ||
-        (!m.github && !o.github && m.name && o.name && m.name.toLowerCase() === o.name.toLowerCase()),
-    );
+  for (const raw of members) {
+    const m = { ...raw };
+    const same = out.find((o) => {
+      if (m.email && o.email) return o.email === m.email;
+      if (m.github && o.github && lower(o.github) === lower(m.github)) return !m.name || !o.name || sameName(o, m) || !m.email || !o.email;
+      return !m.github && !o.github && sameName(o, m);
+    });
     if (same) {
       same.name ??= m.name;
       same.email ??= m.email;
       same.github ??= m.github;
+      same.project ??= m.project;
       same.leader ||= m.leader;
-    } else out.push({ ...m });
+      // Listed twice, once active and once withdrawn: they are active.
+      same.withdrawn = !!same.withdrawn && !!m.withdrawn;
+      continue;
+    }
+    const clash = m.github ? out.find((o) => lower(o.github) === lower(m.github)) : undefined;
+    if (clash) {
+      warnings.push(`${m.name ?? m.email ?? "A member"} gave the same GitHub as ${clash.name ?? clash.email ?? "a teammate"} (@${m.github}); it is kept for ${clash.name ?? "the first"} only.`);
+      m.github = null;
+    }
+    out.push(m);
   }
   return out;
 }
 
-/** De-duplicates members, drops empty teams, numbers duplicate team names and adds warnings. */
+const teamKey = (name: string) => name.toLowerCase().replace(/\s+/g, " ").trim();
+const active = (m: ExtractedMember) => !m.withdrawn;
+export const isWithdrawnTeam = (t: ExtractedTeam) => t.members.length > 0 && t.members.every((m) => m.withdrawn);
+
+/**
+ * De-duplicates members, drops empty teams, tells apart different teams with the same name, and flags
+ * people who appear in more than one active team.
+ */
 export function finalise(teams: ExtractedTeam[]): ExtractedTeam[] {
-  const seen = new Map<string, number>();
-  return teams
-    .map((t) => ({ ...t, members: dedupe(t.members).filter((m) => m.github || m.name) }))
-    .filter((t) => t.members.length > 0)
+  const cleaned = teams
     .map((t) => {
-      const key = t.name.toLowerCase();
-      const n = (seen.get(key) ?? 0) + 1;
-      seen.set(key, n);
       const warnings = [...t.warnings];
-      const leaders = t.members.filter((m) => m.leader);
-      if (leaders.length > 1) {
-        warnings.push("More than one lead marked; the first is used.");
-        leaders.slice(1).forEach((m) => (m.leader = false));
+      return { ...t, members: dedupe(t.members, warnings).filter((m) => m.github || m.name || m.email), warnings };
+    })
+    .filter((t) => t.members.length > 0);
+
+  // Same name, different people: each team keeps its name plus its lead ("Apex · Bhargav S"), falling back
+  // to a number when the lead has no name, so they can be told apart everywhere (and in the CSV).
+  const groups = new Map<string, number[]>();
+  cleaned.forEach((t, i) => groups.set(teamKey(t.name), [...(groups.get(teamKey(t.name)) ?? []), i]));
+  const label = (t: ExtractedTeam) => {
+    const lead = t.members.find((m) => m.leader) ?? t.members[0];
+    return lead?.name ?? (lead?.github ? `@${lead.github}` : null);
+  };
+  const used = new Set<string>();
+  const named = cleaned.map((t, i) => {
+    const group = groups.get(teamKey(t.name))!;
+    const warnings = [...t.warnings];
+    let name = t.name;
+    if (group.length > 1) {
+      const lead = label(t);
+      name = lead ? `${t.name} · ${lead}` : t.name;
+      let n = group.indexOf(i) + 1;
+      while (used.has(name.toLowerCase())) name = `${t.name} (${++n})`;
+      const others = group.filter((j) => j !== i).map((j) => label(cleaned[j]!) ?? "no lead named");
+      warnings.push(`${group.length} different teams are called “${t.name}” (also led by ${others.join(", ")}); shown with the lead's name.`);
+    }
+    used.add(name.toLowerCase());
+    const leaders = t.members.filter((m) => m.leader);
+    if (leaders.length > 1) {
+      warnings.push("More than one lead marked; the first is used.");
+      leaders.slice(1).forEach((m) => (m.leader = false));
+    }
+    const missing = t.members.filter((m) => active(m) && !m.github);
+    if (missing.length) warnings.push(`No GitHub found for ${missing.map((m) => m.name ?? m.email ?? "a member").join(", ")}.`);
+    const gone = t.members.filter((m) => m.withdrawn);
+    if (gone.length && gone.length < t.members.length) warnings.push(`Withdrawn: ${gone.map((m) => m.name ?? m.github ?? "a member").join(", ")}.`);
+    return { ...t, name, warnings };
+  });
+
+  // The same person (GitHub or e-mail) in more than one active team.
+  const where = new Map<string, Set<number>>();
+  named.forEach((t, i) => {
+    if (isWithdrawnTeam(t)) return;
+    for (const m of t.members.filter(active)) {
+      for (const k of [m.github && `gh:${lower(m.github)}`, m.email && `em:${m.email}`]) {
+        if (!k) continue;
+        if (!where.has(k)) where.set(k, new Set());
+        where.get(k)!.add(i);
       }
-      const missing = t.members.filter((m) => !m.github);
-      if (missing.length) warnings.push(`No GitHub found for ${missing.map((m) => m.name ?? m.email ?? "a member").join(", ")}.`);
-      return { ...t, name: n > 1 ? `${t.name} (${n})` : t.name, warnings };
-    });
+    }
+  });
+  named.forEach((t, i) => {
+    if (isWithdrawnTeam(t)) return;
+    const notes = new Set<string>();
+    for (const m of t.members.filter(active)) {
+      const teamsOf = new Set([...(m.github ? where.get(`gh:${lower(m.github)}`) ?? [] : []), ...(m.email ? where.get(`em:${m.email}`) ?? [] : [])]);
+      teamsOf.delete(i);
+      if (teamsOf.size) notes.add(`${m.github ? `@${m.github}` : (m.name ?? m.email)} is also in ${[...teamsOf].map((j) => `“${named[j]!.name}”`).join(", ")}.`);
+    }
+    t.warnings.push(...notes);
+  });
+  return named;
 }
 
 /* ------------------------------------------------------------------ rows ------------------------------------------------------------------ */
 
-type Field = "name" | "email" | "github" | "role";
+type Field = "name" | "email" | "github" | "role" | "project" | "status";
 interface Column {
   index: number;
   team?: true;
@@ -155,12 +249,18 @@ function classifyHeader(header: string, index: number): Column {
   const isTeamName = /\bteam\b/.test(h) && /\b(name|title)\b/.test(h) && !LEADER_WORD.test(h) && !/\bmember/.test(h);
   if (isTeamName || /^(team|group|squad)( name)?$/.test(h) || /^(group|squad) name$/.test(h)) return { index, team: true };
 
-  if (/git ?hub|\bgh\b/.test(h)) col.field = "github";
+  if (/\b(best )?project\b|\brepo(sitory)?\b/.test(h) && !/\bprofile\b/.test(h) && !/solution|document|drive|video|ppt|presentation|idea|title|name|description|track/.test(h)) col.field = "project";
+  else if (/^(status|registration status|application status|participation status|state)$/.test(h)) col.field = "status";
+  else if (/git ?hub|\bgh\b/.test(h)) col.field = "github";
   else if (/e-?mail|mail id/.test(h)) col.field = "email";
   else if (/\brole\b|position|designation|are you (the )?(team )?lead/.test(h)) col.field = "role";
   else if (/\bname\b|^participant|^member|^teammate/.test(h)) col.field = "name";
   if (!col.field) return col;
 
+  if (col.field === "status") {
+    col.slot = "self";
+    return col;
+  }
   if (LEADER_WORD.test(h) && col.field !== "role") col.slot = "leader";
   else {
     const m = h.match(MEMBER_SLOT);
@@ -202,14 +302,13 @@ export function fromRows(rows: string[][]): Extraction | null {
   const slotted = columns.some((c) => c.slot === "leader" || typeof c.slot === "number" || c.multi);
   const selfCols = columns.filter((c) => c.slot === "self");
 
-  // One person per row, grouped by team name.
+  // One person per row, grouped by team.
   if (teamCol && !slotted && selfCols.length) {
-    const byTeam = new Map<string, ExtractedTeam>();
+    const projectCols = selfCols.filter((c) => c.field === "project");
+    const blocks: { key: string; name: string; members: ExtractedMember[] }[] = [];
     for (const row of data) {
-      const teamName = row[teamCol.index]?.trim();
+      const teamName = row[teamCol.index]?.trim().replace(/\s+/g, " ");
       if (!teamName) continue;
-      const key = teamName.toLowerCase();
-      if (!byTeam.has(key)) byTeam.set(key, { name: teamName, members: [], warnings: [] });
       const person: ExtractedMember = { name: null, email: null, github: null, leader: false };
       for (const c of selfCols) {
         const v = row[c.index] ?? "";
@@ -217,11 +316,36 @@ export function fromRows(rows: string[][]): Extraction | null {
         if (c.field === "email") person.email = emailsIn(v)[0] ?? null;
         if (c.field === "github") person.github = handleFromCell(v);
         if (c.field === "role") person.leader = /lead|captain|head|yes|true|poc/i.test(v);
+        if (c.field === "status" && WITHDRAWN.test(v)) person.withdrawn = true;
+        if (c.field === "project" && !person.project) person.project = projectLink(v);
       }
-      if (!person.github) person.github = githubHandles(row.join(" "))[0] ?? null;
-      byTeam.get(key)!.members.push(person);
+      if (!person.github) {
+        const elsewhere = row.filter((_, i) => !projectCols.some((c) => c.index === i)).join(" ");
+        person.github = githubHandles(elsewhere)[0] ?? null;
+      }
+      if (projectCols.length && person.project === undefined) person.project = null;
+      // A new team starts when the team name changes, or at a second lead under the same name.
+      const last = blocks.at(-1);
+      const key = teamKey(teamName);
+      if (last && last.key === key && !(person.leader && last.members.some((m) => m.leader))) last.members.push(person);
+      else blocks.push({ key, name: teamName, members: [person] });
     }
-    return { teams: finalise([...byTeam.values()]), method: "table", warnings: [] };
+    // Rows of one team that are scattered through the sheet are joined, unless both parts have their
+    // own lead: then they are different teams with the same name, or the same team registered twice
+    // (same lead), which is merged.
+    const merged: typeof blocks = [];
+    for (const b of blocks) {
+      const lead = b.members.find((m) => m.leader);
+      const into = merged.find((m) => {
+        if (m.key !== b.key) return false;
+        const other = m.members.find((x) => x.leader);
+        if (!lead || !other) return true;
+        return (!!lead.email && lead.email === other.email) || (!!lead.github && lower(lead.github) === lower(other.github));
+      });
+      if (into) into.members.push(...b.members);
+      else merged.push({ ...b, members: [...b.members] });
+    }
+    return { teams: finalise(merged.map((b) => ({ name: b.name, members: b.members, warnings: [] }))), method: "table", warnings: [] };
   }
 
   // One team per row.

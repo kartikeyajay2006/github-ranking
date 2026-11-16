@@ -22,7 +22,9 @@
 |---|---|
 | **Individuals** | Paste usernames or profile links and get a 0–100 score with a ledger of every factor. |
 | **Teams** | The lead carries 1.2× an equal share (40/30/30 for three; a solo team is 100%). Members can be added any time. |
-| **Upload** | Drop a PDF, Word, Excel or CSV file, a Google Docs/Sheets link, or pasted text. Teams, leads, members, emails and GitHub accounts are pulled out automatically. |
+| **Upload** | Drop a PDF, Word, Excel or CSV file, a Google Docs/Sheets link (any tab), or pasted text. Teams, leads, members, emails, GitHub accounts, statuses and best-project links are pulled out automatically. |
+| **Best project** | Each person's named repository is graded on its own (substance, engineering, completeness, recognition × how much of it they wrote) and blended with their profile, 70/30 by default. Re-weight any time, instantly. |
+| **Messy data** | Same-named teams kept apart and labelled by their lead, re-registrations merged, people in two teams flagged, withdrawn entries left out. |
 | **Live ranking** | Thousands of teams rank in the background, appearing one by one. Survives restarts and waits out GitHub rate limits. |
 | **Selection** | Set a top-N cut-off (e.g. 800 of 5,000), search, and export CSV. |
 | **Data safety** | Verified hourly snapshots, automatic repair from the last good copy, password-protected access. |
@@ -50,7 +52,7 @@ Needs Node.js 22.13+. No external database: storage is the built-in `node:sqlite
 
 **[Read the full guide →](docs/GUIDE.md)** for the scoring method, fairness rules, upload formats, data safety, deployment and architecture.
 
-<sub>Next.js 16 · React 19 · TypeScript · SQLite · GitHub GraphQL · 83 tests</sub>
+<sub>Next.js 16 · React 19 · TypeScript · SQLite · GitHub GraphQL · 105 tests</sub>
 
 ---
 

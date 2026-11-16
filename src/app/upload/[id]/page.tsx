@@ -4,7 +4,8 @@ import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { startImport } from "../actions";
 import { DiscardButton, LiveImport, StartButton } from "@/components/imports";
-import { leaderOf } from "@/lib/imports/extract";
+import { isWithdrawnTeam, leaderOf } from "@/lib/imports/extract";
+import { parseProjectRef } from "@/lib/scoring/project";
 import { getJob, jobCounts, jobTeams, rankedTeams } from "@/lib/imports/jobs";
 
 type Props = { params: Promise<{ id: string }> };
@@ -15,7 +16,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 }
 
 const METHOD = { table: "read as a table", text: "read as a document", ai: "read with AI extraction" } as Record<string, string>;
-const PER_HOUR = 800; // measured: ~5 GitHub API points per person against 5,000 points an hour, with headroom
+const PER_HOUR = 700; // measured: ~5 GitHub API points per person against 5,000 points an hour, with headroom
 
 export default async function ImportPage({ params }: Props) {
   await connection();
@@ -46,11 +47,20 @@ export default async function ImportPage({ params }: Props) {
 
   if (job.status === "draft") {
     const teams = jobTeams(id);
-    const members = teams.reduce((s, t) => s + t.members.length, 0);
-    const missing = teams.reduce((s, t) => s + t.members.filter((m) => !m.github).length, 0);
+    const withdrawnTeams = teams.filter(isWithdrawnTeam).length;
+    const withdrawnPeople = teams.reduce((s, t) => s + t.members.filter((m) => m.withdrawn).length, 0);
+    const activeMembers = teams.flatMap((t) => t.members.filter((m) => !m.withdrawn));
+    const members = activeMembers.length;
+    const missing = activeMembers.filter((m) => !m.github).length;
     const unmarked = teams.filter((t) => !t.members.some((m) => m.leader)).length;
-    const noGithub = teams.filter((t) => !t.members.some((m) => m.github)).length;
-    const hours = counts.people / PER_HOUR;
+    const noGithub = teams.filter((t) => !isWithdrawnTeam(t) && !t.members.some((m) => m.github && !m.withdrawn)).length;
+    const hasProjects = activeMembers.some((m) => m.project !== undefined);
+    const gradable = activeMembers.filter((m) => m.github && !("problem" in parseProjectRef(m.project))).length;
+    const otherLinks = activeMembers.filter((m) => m.project && "problem" in parseProjectRef(m.project)).length;
+    const noProject = activeMembers.filter((m) => !m.project).length;
+    const duplicates = teams.filter((t) => t.warnings.some((w) => /is also in|gave the same GitHub/.test(w))).length;
+    const sameName = teams.filter((t) => t.warnings.some((w) => /different teams are called/.test(w))).length;
+    const hours = (counts.people * (hasProjects ? 1.3 : 1)) / PER_HOUR;
 
     return (
       <div className="wrap">
@@ -72,6 +82,24 @@ export default async function ImportPage({ params }: Props) {
             <dt>No lead marked</dt>
             <dd>{unmarked.toLocaleString("en-US")}</dd>
           </div>
+          {hasProjects && (
+            <div>
+              <dt>Best projects to grade</dt>
+              <dd>{gradable.toLocaleString("en-US")}</dd>
+            </div>
+          )}
+          {withdrawnPeople > 0 && (
+            <div>
+              <dt>Withdrawn</dt>
+              <dd>
+                {withdrawnTeams.toLocaleString("en-US")}
+                <span className="muted" style={{ fontSize: "0.5em" }}>
+                  {" "}
+                  teams · {withdrawnPeople} people
+                </span>
+              </dd>
+            </div>
+          )}
           <div>
             <dt>Estimated time</dt>
             <dd>{hours < 1 ? `${Math.max(1, Math.round(hours * 60))} min` : `${hours.toFixed(1)} h`}</dd>
@@ -113,6 +141,54 @@ export default async function ImportPage({ params }: Props) {
             </fieldset>
           </div>
           <div className="col">
+            {hasProjects && (
+              <fieldset className="field" style={{ border: 0, padding: 0, margin: 0 }}>
+                <span>
+                  Best project weight ({gradable} gradable · {otherLinks} other links · {noProject} none)
+                </span>
+                <div className="segmented">
+                  {[0, 30, 50, 70].map((v) => (
+                    <label key={v}>
+                      <input type="radio" name="projectWeight" value={v} defaultChecked={v === 30} />
+                      <span>{v === 0 ? "GitHub only" : `${100 - v}/${v}`}</span>
+                    </label>
+                  ))}
+                </div>
+                <small>
+                  Each person&rsquo;s score = GitHub profile × the first number + their best project (one GitHub repository, graded on its own and on how much of it
+                  they wrote) × the second. Changeable after ranking, instantly.
+                </small>
+                <div className="segmented" style={{ marginTop: 8 }}>
+                  <label>
+                    <input type="radio" name="projectMissing" value="github" defaultChecked />
+                    <span>No gradable project → GitHub only</span>
+                  </label>
+                  <label>
+                    <input type="radio" name="projectMissing" value="zero" />
+                    <span>→ project counts as 0</span>
+                  </label>
+                </div>
+              </fieldset>
+            )}
+            {withdrawnPeople > 0 && (
+              <fieldset className="field" style={{ border: 0, padding: 0, margin: 0 }}>
+                <span>Withdrawn people ({withdrawnPeople})</span>
+                <div className="segmented">
+                  <label>
+                    <input type="radio" name="withdrawn" value="skip" defaultChecked />
+                    <span>Leave them out</span>
+                  </label>
+                  <label>
+                    <input type="radio" name="withdrawn" value="keep" />
+                    <span>Rank them too</span>
+                  </label>
+                </div>
+                <small>
+                  Left out: {withdrawnTeams} fully withdrawn {withdrawnTeams === 1 ? "team is" : "teams are"} not ranked, and withdrawn members don&rsquo;t count in
+                  their team.
+                </small>
+              </fieldset>
+            )}
             <label className="field">
               <span>Select top (optional)</span>
               <input className="input" name="cutoff" inputMode="numeric" pattern="[0-9]*" placeholder="e.g. 800" />
@@ -122,6 +198,8 @@ export default async function ImportPage({ params }: Props) {
           <div className="foot">
             <p>
               Each person is analysed on their own GitHub evidence only. Ranking runs in the background: you can close this page and come back.
+              {duplicates > 0 && ` ${duplicates} teams share a person with another team or had two members type the same GitHub — they are flagged with ⚠.`}
+              {sameName > 0 && ` ${sameName} teams share a name with a different team; each is shown with its lead's name.`}
               {noGithub > 0 && ` ${noGithub} teams have no GitHub accounts and will be listed as failed.`}
             </p>
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -161,7 +239,7 @@ export default async function ImportPage({ params }: Props) {
                     <td>
                       <span className="people">
                         {t.members.map((m, k) => (
-                          <span key={k} className={`person${m.github ? "" : " missing"}`} title={m.email ?? undefined}>
+                          <span key={k} className={`person${m.github ? "" : " missing"}${m.withdrawn ? " withdrawn" : ""}`} title={[m.email, m.project && `Best project: ${m.project}`, m.withdrawn && "Withdrawn"].filter(Boolean).join("\n") || undefined}>
                             {m.leader || (k === lead && !t.members.some((x) => x.leader)) ? (
                               <b className={m.leader ? "star" : "star soft"} title={m.leader ? "Marked lead" : "Lead if “first listed” is chosen"}>
                                 ★
@@ -169,6 +247,12 @@ export default async function ImportPage({ params }: Props) {
                             ) : null}
                             {m.name ?? <span className="muted">unnamed</span>}
                             <span className="mono">{m.github ? ` @${m.github}` : " · no GitHub"}</span>
+                            {m.project && !("problem" in parseProjectRef(m.project)) && (
+                              <span className="proj-tag" title={m.project}>
+                                project
+                              </span>
+                            )}
+                            {m.withdrawn && <span className="ineligible-tag">withdrawn</span>}
                           </span>
                         ))}
                       </span>
@@ -191,6 +275,8 @@ export default async function ImportPage({ params }: Props) {
       teamId: t.teamId,
       score: t.score,
       band: t.band,
+      githubScore: t.githubScore,
+      projectScore: t.projectScore,
       lead: lead ? { name: lead.name, github: lead.github } : null,
       members: t.members.filter((m) => m.github).map((m) => m.github!),
       warnings: t.warnings,

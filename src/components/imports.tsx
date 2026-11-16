@@ -5,7 +5,7 @@ import { Fragment, useActionState, useEffect, useMemo, useRef, useState, useTran
 import { useFormStatus } from "react-dom";
 import { useRouter } from "next/navigation";
 import type { UploadState } from "@/app/upload/actions";
-import { pauseImport, removeImport, resumeImport, retryImport, updateCutoff } from "@/app/upload/actions";
+import { pauseImport, removeImport, resumeImport, retryImport, reweightImport, updateCutoff } from "@/app/upload/actions";
 
 /* --------------------------------------------------------------- upload form --------------------------------------------------------------- */
 
@@ -149,6 +149,8 @@ interface Progress {
     method: string;
     status: "draft" | "running" | "paused" | "done";
     cutoff: number | null;
+    projectWeight: number;
+    projectMissing: "github" | "zero";
     note: string | null;
     resumeAt: number | null;
     startedAt: number | null;
@@ -161,6 +163,8 @@ interface Progress {
     teamId: string | null;
     score: number | null;
     band: string | null;
+    githubScore: number | null;
+    projectScore: number | null;
     lead: { name: string | null; github: string | null } | null;
     members: string[];
     warnings: string[];
@@ -222,12 +226,16 @@ export function LiveImport({ id, initial }: { id: string; initial: Progress }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data.job.status]);
 
-  const act = (fn: () => Promise<unknown>) =>
+  const act = (fn: () => Promise<unknown>, { full = false } = {}) =>
     start(async () => {
       await fn();
+      if (full) since.current = 0; // scores changed everywhere: reload the whole ranking
       await refresh();
       router.refresh();
     });
+  const [weight, setWeight] = useState(String(Math.round(initial.job.projectWeight * 100)));
+  const [missingProject, setMissingProject] = useState(initial.job.projectMissing);
+  const weightPct = Math.round(data.job.projectWeight * 100);
 
   const { job, counts } = data;
   const finished = counts.done + counts.failed;
@@ -331,6 +339,43 @@ export function LiveImport({ id, initial }: { id: string; initial: Progress }) {
             <input className="input small-input wide" type="search" placeholder="Search team, name or GitHub" value={query} onChange={(e) => setQuery(e.target.value)} />
           </div>
         </div>
+        <form
+          className="weight-bar"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const f = new FormData();
+            f.set("projectWeight", weight);
+            f.set("projectMissing", missingProject);
+            act(() => reweightImport(id, f), { full: true });
+          }}
+        >
+          <span className="weight-formula">
+            Score = <b>{100 - weightPct}%</b> GitHub profile + <b>{weightPct}%</b> best project
+            <span className="muted"> · no gradable project: {data.job.projectMissing === "github" ? "GitHub profile only" : "project counts as 0"}</span>
+          </span>
+          <span className="weight-controls">
+            <label className="sr-only" htmlFor="pw">
+              Best project weight
+            </label>
+            <select id="pw" className="input small-input" value={weight} onChange={(e) => setWeight(e.target.value)}>
+              {[0, 10, 20, 30, 40, 50, 60, 70].map((v) => (
+                <option key={v} value={v}>
+                  {v === 0 ? "GitHub only" : `${100 - v} / ${v}`}
+                </option>
+              ))}
+            </select>
+            <label className="sr-only" htmlFor="pm">
+              Without a gradable project
+            </label>
+            <select id="pm" className="input small-input" value={missingProject} onChange={(e) => setMissingProject(e.target.value as "github" | "zero")}>
+              <option value="github">No project → GitHub only</option>
+              <option value="zero">No project → counts as 0</option>
+            </select>
+            <button className="btn ghost small" type="submit" disabled={pending || (Number(weight) === weightPct && missingProject === data.job.projectMissing)}>
+              Re-rank
+            </button>
+          </span>
+        </form>
         {rows.length === 0 ? (
           <p className="muted" style={{ marginTop: 20 }}>
             {data.ranked.length ? "No team matches the search." : "The first results will appear here as soon as a team finishes."}
@@ -346,6 +391,12 @@ export function LiveImport({ id, initial }: { id: string; initial: Progress }) {
                 </th>
                 <th scope="col" className="hide-md">
                   Members
+                </th>
+                <th scope="col" className="right hide-md" title="Lead-weighted GitHub profile score">
+                  GitHub
+                </th>
+                <th scope="col" className="right hide-md" title="Lead-weighted best-project score of members who gave a gradable project">
+                  Project
                 </th>
                 <th scope="col" className="right">
                   Score
@@ -398,6 +449,8 @@ export function LiveImport({ id, initial }: { id: string; initial: Progress }) {
                         ))}
                       </span>
                     </td>
+                    <td className="right hide-md mono muted">{r.githubScore?.toFixed(1) ?? "—"}</td>
+                    <td className="right hide-md mono muted">{r.projectScore?.toFixed(1) ?? "—"}</td>
                     <td className="score-cell">{r.score?.toFixed(1)}</td>
                     <td className="hide-sm">
                       <span className="band">{r.band}</span>
@@ -405,7 +458,7 @@ export function LiveImport({ id, initial }: { id: string; initial: Progress }) {
                   </tr>
                   {cut && r.rank === cut && !query && (
                     <tr className="cut-row" aria-label={`Cut-off: top ${cut}`}>
-                      <td colSpan={6}>
+                      <td colSpan={8}>
                         <span>Top {cut.toLocaleString("en-US")} cut-off</span>
                       </td>
                     </tr>

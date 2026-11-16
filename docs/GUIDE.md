@@ -179,6 +179,11 @@ The **Upload** page ranks an entire application list at once.
 
 Members without a usable GitHub account (none given, or the account doesn't exist) **count as 0 by default**. They keep their share of the team's weight, so a team can't raise its score by leaving a weaker member's GitHub blank. "Leave them out" is available per import.
 
+### Best project and messy registration exports
+
+- **Best project.** A column like "Best Project You've Built (Project Link)" is read per person. A GitHub repository (or a `user.github.io/repo` page) is graded 0–100: build substance 35%, engineering quality 30%, completeness 25%, recognition 10%, multiplied by the applicant's share of the code (half or more keeps 100%, none keeps 30%). Code that arrived in one or two commits counts less than code grown over a history. Each person's score is then `(1 − w) × profile + w × project` with `w` = 30% by default; people without a gradable project get their profile score (or 0 for the project, if chosen). The weight can be changed on the import page at any time; teams are re-scored from stored results without calling GitHub.
+- **Exports from event platforms.** A group row above the real header is skipped. Teams are blocks that start at their leader's row, so different teams with the same name stay apart (shown as "Apex · Asha"), and a team registered twice under the same leader is merged. Rows for the same person are merged; two teammates who typed the same GitHub are separated and flagged; a person in two active teams is flagged on both. People marked Withdrawn are left out by default.
+
 ## Fairness guarantees
 
 - **One person, one context.** An assessment reads a single account's data. No other participant is consulted, compared or used for normalisation.

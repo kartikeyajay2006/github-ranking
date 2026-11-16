@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { AiExtractionError, aiAvailable, extractWithClaude } from "@/lib/imports/ai";
 import { extract, type Extraction } from "@/lib/imports/extract";
-import { createJob, deleteJob, getJob, type LeaderPolicy, type MissingPolicy, retryFailed, setCutoff, setJobStatus, startJob } from "@/lib/imports/jobs";
+import { createJob, deleteJob, getJob, type LeaderPolicy, type MissingPolicy, reweightJob, retryFailed, setCutoff, setJobStatus, startJob } from "@/lib/imports/jobs";
+import type { ProjectMissingPolicy } from "@/lib/scoring/project";
 import { MAX_BYTES, ReadError, type DocumentContent, readBytes, readLink } from "@/lib/imports/read";
 import { kickWorker } from "@/lib/imports/worker";
 
@@ -75,7 +76,14 @@ export async function startImport(id: string, form: FormData) {
   const policy: LeaderPolicy = form.get("policy") === "equal" ? "equal" : "first";
   const cutoffRaw = Number(form.get("cutoff"));
   const missing: MissingPolicy = form.get("missing") === "skip" ? "skip" : "zero";
-  startJob(id, policy, Number.isInteger(cutoffRaw) && cutoffRaw > 0 ? cutoffRaw : null, missing);
+  startJob(id, {
+    policy,
+    cutoff: Number.isInteger(cutoffRaw) && cutoffRaw > 0 ? cutoffRaw : null,
+    missing,
+    projectWeight: projectWeightFrom(form),
+    projectMissing: form.get("projectMissing") === "zero" ? "zero" : "github",
+    withdrawn: form.get("withdrawn") === "keep" ? "keep" : "skip",
+  });
   kickWorker();
   revalidatePath(`/upload/${id}`);
   revalidatePath("/upload");
@@ -112,4 +120,18 @@ export async function removeImport(id: string) {
   revalidatePath("/upload");
   revalidatePath("/teams");
   redirect("/upload");
+}
+
+/** Best-project weight from a form, as a share (the form sends a percentage). */
+function projectWeightFrom(form: FormData): number {
+  const pct = Number(form.get("projectWeight"));
+  return Number.isFinite(pct) ? Math.min(100, Math.max(0, pct)) / 100 : 0.3;
+}
+
+/** Re-scores every finished team with a new best-project weight; no GitHub calls. */
+export async function reweightImport(id: string, form: FormData) {
+  if (!getJob(id)) return;
+  const missing: ProjectMissingPolicy = form.get("projectMissing") === "zero" ? "zero" : "github";
+  reweightJob(id, projectWeightFrom(form), missing);
+  revalidatePath(`/upload/${id}`);
 }

@@ -8,6 +8,8 @@ import { Avatar, Band, Meter, fmt, pct, relative, seriesColor } from "@/componen
 import { LEADER_FACTOR } from "@/lib/scoring/team";
 import { scoreTeam } from "@/lib/teamscore";
 import { getSummaries, getTeam, jobNames } from "@/lib/store";
+import { importTeamFor } from "@/lib/imports/jobs";
+import { personScore, teamScore } from "@/lib/scoring/project";
 
 type Props = { params: Promise<{ id: string }>; searchParams: Promise<{ skipped?: string }> };
 
@@ -30,6 +32,9 @@ export default async function TeamPage({ params, searchParams }: Props) {
   const byLogin = new Map(result?.members.map((m) => [m.login.toLowerCase(), m]));
   const n = members.length + team.absent.length;
   const leadActive = team.mode === "leader" && !!team.leader && n > 1;
+  const imported = team.jobId ? importTeamFor(team.id) : null;
+  const ranking = imported?.breakdown ? teamScore(imported.breakdown, imported.job.projectWeight, imported.job.projectMissing) : null;
+  const w = imported?.job.projectWeight ?? 0;
 
   return (
     <div className="wrap">
@@ -69,10 +74,15 @@ export default async function TeamPage({ params, searchParams }: Props) {
         </div>
         <div className="scorecard">
           <div className="figure">
-            <span className="value">{result ? fmt(result.total, 1) : "—"}</span>
+            <span className="value">{ranking ? fmt(ranking.total, 1) : result ? fmt(result.total, 1) : "—"}</span>
             <span className="of">/ 100</span>
           </div>
-          {result && <Band band={result.band} />}
+          {ranking ? <Band band={ranking.band} /> : result && <Band band={result.band} />}
+          {ranking && result && (
+            <span className="muted" style={{ fontSize: 12.5 }}>
+              GitHub profiles alone: {fmt(result.total, 1)}
+            </span>
+          )}
           <div className="actions">
             {n > 0 && (
               <ActionButton className="btn ghost small" action={refreshTeam.bind(null, team.id)} busy="Re-analysing…">
@@ -82,6 +92,80 @@ export default async function TeamPage({ params, searchParams }: Props) {
           </div>
         </div>
       </header>
+
+      {imported?.breakdown && ranking && (
+        <section className="section" aria-labelledby="ranking-score">
+          <div className="section-head">
+            <h2 id="ranking-score">Ranking score: {fmt(ranking.total, 1)}</h2>
+            <span className="aside">
+              Each person: {Math.round((1 - w) * 100)}% GitHub profile + {Math.round(w * 100)}% best project
+              {imported.job.projectMissing === "github" ? " (GitHub only when there is no gradable project)" : " (a missing project counts as 0)"}; then lead-weighted.
+            </span>
+          </div>
+          <table className="standings" style={{ marginTop: 12 }}>
+            <thead>
+              <tr>
+                <th scope="col">Member</th>
+                <th scope="col" className="right">
+                  Weight
+                </th>
+                <th scope="col" className="right">
+                  GitHub
+                </th>
+                <th scope="col">Best project</th>
+                <th scope="col" className="right">
+                  Project
+                </th>
+                <th scope="col" className="right">
+                  Person
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {imported.breakdown.map((m) => (
+                <tr key={m.label}>
+                  <td>
+                    {m.login ? (
+                      <Link className="primary" href={`/u/${m.login}`}>
+                        {m.name ?? `@${m.login}`}
+                      </Link>
+                    ) : (
+                      <span>{m.name ?? m.label.replace(/^~/, "")}</span>
+                    )}
+                    {m.isLeader && <span className="muted"> · lead</span>}
+                    {m.login && m.name && <span className="mono muted"> @{m.login}</span>}
+                  </td>
+                  <td className="right mono">{pct(m.weight)}</td>
+                  <td className="right mono">{fmt(m.github, 1)}</td>
+                  <td style={{ maxWidth: 340 }}>
+                    {m.projectRepo ? (
+                      <a className="link mono" href={`https://github.com/${m.projectRepo}`} target="_blank" rel="noreferrer">
+                        {m.projectRepo}
+                      </a>
+                    ) : (
+                      <span className="muted" style={{ fontSize: 13 }}>
+                        {m.projectNote ?? "—"}
+                        {m.projectLink && !m.projectRepo && (
+                          <>
+                            {" · "}
+                            <a className="link" href={m.projectLink} target="_blank" rel="noreferrer">
+                              link
+                            </a>
+                          </>
+                        )}
+                      </span>
+                    )}
+                  </td>
+                  <td className="right mono">{m.project === null ? "—" : fmt(m.project, 1)}</td>
+                  <td className="right mono" style={{ fontWeight: 600 }}>
+                    {fmt(personScore(m.github, m.project, w, imported.job.projectMissing), 1)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
 
       {result && (
         <section className="section" aria-labelledby="composition">
