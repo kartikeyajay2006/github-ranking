@@ -1,6 +1,8 @@
 import "server-only";
 import { dataVersion, getSummaries, jobNames, listTeams } from "./store";
 import { scoreTeam } from "./teamscore";
+import { importScores } from "./imports/jobs";
+import type { Band } from "./types";
 import type { ProfileSummary, Team } from "./types";
 
 export interface TeamStanding {
@@ -21,10 +23,16 @@ export function teamStandings() {
   if (cache && cache.version === version) return cache;
   const teams = listTeams();
   const profiles = getSummaries([...new Set(teams.flatMap((t) => t.members.map((m) => m.login)))]);
+  // Imported teams are ranked on their import score (GitHub profile + best project), the same number the
+  // import page and CSV show; the dimension profile still comes from members' GitHub assessments.
+  const imported = importScores();
   const rows = teams
     .map((team) => {
       const members = team.members.map((m) => ({ login: m.login, profile: profiles.get(m.login.toLowerCase()) ?? null }));
-      return { team, members, result: scoreTeam(team, profiles), updated: Math.max(0, ...members.map((m) => m.profile?.analyzedAt ?? 0)) };
+      let result = scoreTeam(team, profiles);
+      const ranked = imported.get(team.id);
+      if (ranked && result) result = { ...result, total: ranked.score, band: (ranked.band as Band) ?? result.band };
+      return { team, members, result, updated: Math.max(0, ...members.map((m) => m.profile?.analyzedAt ?? 0)) };
     })
     .sort((a, b) => (b.result?.total ?? -1) - (a.result?.total ?? -1) || a.team.name.localeCompare(b.team.name));
   // Competition ranking (1, 1, 3): the first position of each score.

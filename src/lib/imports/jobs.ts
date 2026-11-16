@@ -355,6 +355,16 @@ export function earliestResume(): number | null {
   return row.t;
 }
 
+/** Final ranking scores (GitHub + best project) of imported teams, by team id. */
+export function importScores(): Map<string, { score: number; band: string | null }> {
+  const rows = db().prepare("SELECT team_id, score, band FROM import_teams WHERE status = 'done' AND team_id IS NOT NULL").all() as {
+    team_id: string;
+    score: number;
+    band: string | null;
+  }[];
+  return new Map(rows.map((r) => [r.team_id, { score: r.score, band: r.band }]));
+}
+
 /** Is any import still ranking (or waiting for GitHub's limit to reset)? */
 export function hasRunningJob(): boolean {
   return !!db().prepare("SELECT 1 FROM import_jobs WHERE status = 'running' LIMIT 1").get();

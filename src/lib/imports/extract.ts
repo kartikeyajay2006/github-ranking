@@ -44,7 +44,8 @@ const RESERVED = new Set(
 );
 const EMAIL_RE = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
 const URL_RE = /(?:https?:\/\/)?(?:www\.)?github\.com\/([A-Za-z0-9-]{1,39})(\/[A-Za-z0-9_.-]+)?[^\s,;|)\]"'<>]*/gi;
-const LABELLED_RE = /\bgit\s*hub\s*(?:id|user\s*name|username|handle|profile|account|link|url)?\s*[:=\-–—]\s*@?(?!https?\b|www\b)([A-Za-z0-9-]{1,39})\b(?![.:/])/gi;
+// "GitHub: handle" as a label, never inside a link or a name ("…/github-ranking", "my-github-tool").
+const LABELLED_RE = /(?<![\/\w.@-])git\s*hub\s*(?:id|user\s*name|username|handle|profile|account|link|url)?\s*(?:[:=–—]|\s-\s?|-\s)\s*@?(?!https?\b|www\b)([A-Za-z0-9-]{1,39})\b(?![.:/])/gi;
 
 export const isLogin = (s: string) => LOGIN_RE.test(s) && !RESERVED.has(s.toLowerCase());
 

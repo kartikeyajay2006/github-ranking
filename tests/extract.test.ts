@@ -220,3 +220,13 @@ Orion,Chen,Leader,chen@x.io,999,Withdrawn,Free,github.com/chenw,,
     expect(projectLink("demo: https://x.vercel.app and code https://github.com/a/b")).toBe("https://github.com/a/b");
   });
 });
+
+describe("GitHub labels are not confused with names", () => {
+  it("a repository or tool called github-something is not an account", () => {
+    expect(githubHandles("code: https://github.com/asha/github-ranking")).toEqual([]);
+    expect(githubHandles("built my-github-tool last year")).toEqual([]);
+    expect(githubHandles("GitHub: asha-dev")).toEqual(["asha-dev"]);
+    expect(githubHandles("GitHub - asha-dev")).toEqual(["asha-dev"]);
+    expect(githubHandles("GitHub username – asha-dev")).toEqual(["asha-dev"]);
+  });
+});

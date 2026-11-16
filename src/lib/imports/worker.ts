@@ -82,7 +82,9 @@ async function loop() {
 async function processTeam(team: ImportTeam, job: ImportJob) {
   const logins: string[] = [];
   for (const m of team.members) if (m.github && !logins.some((l) => l.toLowerCase() === m.github!.toLowerCase())) logins.push(m.github);
-  if (!logins.length) {
+  const countZero = job.missingPolicy === "zero";
+  // With "count as 0", a team where nobody has a usable GitHub is still ranked, at 0, rather than dropped.
+  if (!logins.length && !countZero) {
     finishTeam(job.id, team.idx, { status: "failed", error: "No GitHub accounts listed for this team." });
     return;
   }
@@ -119,7 +121,7 @@ async function processTeam(team: ImportTeam, job: ImportJob) {
   }
 
   const ok = results.filter((r) => r.ok && r.login).map((r) => r.login!);
-  if (!ok.length) {
+  if (!ok.length && !countZero) {
     finishTeam(job.id, team.idx, {
       status: "failed",
       error: results.map((r) => `@${r.input}: ${r.message}`).join(" ") || "No member could be analysed.",
@@ -137,8 +139,6 @@ async function processTeam(team: ImportTeam, job: ImportJob) {
       missing.push({ label: m.github, name: m.name, github: m.github, reason: r?.message ?? "Couldn't be analysed" });
     }
   });
-  const countZero = job.missingPolicy === "zero";
-
   if (team.teamId) deleteTeam(team.teamId); // a retry replaces the earlier result
   const leadMember = team.leader !== null ? team.members[team.leader] : null;
   const leadOk = leadMember?.github ? ok.find((l) => l.toLowerCase() === leadMember.github!.toLowerCase()) ?? null : null;
@@ -154,6 +154,7 @@ async function processTeam(team: ImportTeam, job: ImportJob) {
   for (const a of missing)
     warnings.push(`${a.name ?? a.github}: ${a.reason}${countZero ? " (counts as 0)" : " (left out)"}`);
   if (leadMember && !leadOk && !countZero) warnings.push("The lead couldn't be analysed, so members are weighted equally.");
+  if (!ok.length) warnings.push("No member has a usable GitHub account, so the team scores 0.");
 
   // Best projects: each analysed member's own repository, graded on its own evidence.
   const projects = new Map<string, ProjectResult>();
