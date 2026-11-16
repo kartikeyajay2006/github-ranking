@@ -6,7 +6,7 @@ import { type MemberBreakdown, teamScore } from "../scoring/project";
 import { addTeamMembers, createTeam, deleteTeam, getSummaries, getTeam, setTeamAbsent, updateTeam } from "../store";
 import { scoreTeam } from "../teamscore";
 import type { AbsentMember } from "../types";
-import { claimNext, deferRunning, earliestResume, finishTeam, requeueInterrupted, settleJobs, type ImportJob, type ImportTeam } from "./jobs";
+import { claimNext, deferRunning, earliestResume, finishTeam, hasRunningJob, requeueInterrupted, settleJobs, type ImportJob, type ImportTeam } from "./jobs";
 
 /**
  * Ranks imported teams one at a time in the background. Each finished team is written to the
@@ -36,6 +36,23 @@ export function kickWorker() {
 export function resumeOnBoot() {
   requeueInterrupted();
   kickWorker();
+  keepAwakeWhileRanking();
+}
+
+/**
+ * Free hosts (Render's free plan) put a service to sleep after 15 minutes without inbound requests, and
+ * background work doesn't count. While an import is running, the server requests its own public address
+ * every 10 minutes so ranking carries on with nobody watching; when idle it is allowed to sleep.
+ */
+function keepAwakeWhileRanking() {
+  const url = process.env.RENDER_EXTERNAL_URL || process.env.PUBLIC_URL;
+  const flag = globalThis as unknown as { __keepAwake?: NodeJS.Timeout };
+  if (!url || flag.__keepAwake) return;
+  flag.__keepAwake = setInterval(() => {
+    if (!hasRunningJob()) return;
+    fetch(`${url.replace(/\/$/, "")}/api/health`, { signal: AbortSignal.timeout(30_000) }).catch(() => {});
+  }, 10 * 60_000);
+  flag.__keepAwake.unref();
 }
 
 function scheduleWake() {

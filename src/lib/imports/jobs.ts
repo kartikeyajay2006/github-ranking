@@ -354,3 +354,8 @@ export function earliestResume(): number | null {
   const row = db().prepare("SELECT MIN(resume_at) AS t FROM import_jobs WHERE status = 'running' AND resume_at IS NOT NULL").get() as { t: number | null };
   return row.t;
 }
+
+/** Is any import still ranking (or waiting for GitHub's limit to reset)? */
+export function hasRunningJob(): boolean {
+  return !!db().prepare("SELECT 1 FROM import_jobs WHERE status = 'running' LIMIT 1").get();
+}
