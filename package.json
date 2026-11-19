@@ -21,6 +21,7 @@
     "@anthropic-ai/sdk": "1.8.0",
     "fflate": "0.8.3",
     "mammoth": "1.13.0",
+    "marked": "^15.0.12",
     "next": "16.4.6",
     "papaparse": "5.7.1",
     "react": "19.3.1",

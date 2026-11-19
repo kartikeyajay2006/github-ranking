@@ -5,6 +5,7 @@ const config: NextConfig = {
   // Self-contained server bundle for the Docker image only (node .next/standalone/server.js); local `npm start` uses next start.
   output: process.env.BUILD_STANDALONE === "1" ? "standalone" : undefined,
   poweredByHeader: false,
+  outputFileTracingIncludes: { "/docs/assets/*": ["./docs/assets/**/*"] },
   experimental: {
     // Application documents (PDF, Word, Excel) are uploaded through a server action.
     serverActions: { bodySizeLimit: "26mb" },
