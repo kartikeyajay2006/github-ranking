@@ -38,10 +38,17 @@ Paste a username and get a score out of 100. Every point traces back to public G
 - [Development](#development)
 - [Limitations](#limitations)
 - [Roadmap](#roadmap)
+- [App handbook](app-handbook.md)
+- [Scoring reference](scoring-reference.md)
+- [Imports and ranking](imports-and-ranking.md)
+- [Operations handbook](operations.md)
+- [Repository structure](../reference/repository-structure.md)
+- [Data model and HTTP reference](../reference/data-model-and-api.md)
+- [Contributor workflow](../reference/contributor-workflow.md)
 
 ---
 
-## Why
+## 🟦 Why
 
 The usual ways of judging a GitHub profile are easy to game:
 
@@ -56,7 +63,7 @@ The usual ways of judging a GitHub profile are easy to game:
 
 ---
 
-## How a score is built
+## 🧮 How a score is built
 
 Six dimensions, each scored 0–100 and weighted into a total. **55% of the score is building.**
 
@@ -126,11 +133,11 @@ Each repository's score is then multiplied by an **authorship factor**, `min(1, 
 **Engineering breadth:** distinct languages (40%, full at 8), repositories scoring 45+ on quality (35%, full at 8), other people's repositories they committed to, opened PRs in or reviewed this year (25%, full at 10).
 </details>
 
-The full specification also lives in the app at **`/method`**.
+The full public specification also lives in the app at **`/method`**. For code-aligned detail, read the [scoring reference](scoring-reference.md).
 
 ---
 
-## What counts as whose work
+## 🤝 What counts as whose work
 
 Every merged pull request in a repository the person doesn't own is classified using GitHub's own author association and who merged it:
 
@@ -152,7 +159,7 @@ The split describes how someone works; it doesn't add or remove points by itself
 
 ---
 
-## Teams
+## 🟢 Teams
 
 A team's score is the weighted mean of its members' **finished, independent** scores.
 
@@ -168,7 +175,7 @@ The lead carries 1.2× an equal share (`1.2 / n`). Without a designated lead, a 
 
 ---
 
-## Bulk upload
+## 🟠 Bulk upload
 
 The **Upload** page ranks an entire application list at once.
 
@@ -184,7 +191,7 @@ Members without a usable GitHub account (none given, or the account doesn't exis
 - **Best project.** A column like "Best Project You've Built (Project Link)" is read per person. A GitHub repository (or a `user.github.io/repo` page) is graded 0–100: build substance 35%, engineering quality 30%, completeness 25%, recognition 10%, multiplied by the applicant's share of the code (half or more keeps 100%, none keeps 30%). Code that arrived in one or two commits counts less than code grown over a history. Each person's score is then `(1 − w) × profile + w × project` with `w` = 30% by default; people without a gradable project get their profile score (or 0 for the project, if chosen). The weight can be changed on the import page at any time; teams are re-scored from stored results without calling GitHub.
 - **Exports from event platforms.** A group row above the real header is skipped. Teams are blocks that start at their leader's row, so different teams with the same name stay apart (shown as "Apex · Asha"), and a team registered twice under the same leader is merged. Rows for the same person are merged; two teammates who typed the same GitHub are separated and flagged; a person in two active teams is flagged on both. People marked Withdrawn are left out by default.
 
-## Fairness guarantees
+## 🛡️ Fairness guarantees
 
 - **One person, one context.** An assessment reads a single account's data. No other participant is consulted, compared or used for normalisation.
 - **Absolute thresholds.** Adding, removing or re-analysing anyone never moves another person's score; rankings are a plain sort.
@@ -194,7 +201,7 @@ Members without a usable GitHub account (none given, or the account doesn't exis
 
 ---
 
-## Quick start
+## 🚀 Quick start
 
 Requires **Node.js 22.13+**. Storage uses the built-in `node:sqlite`, so there are no native dependencies.
 
@@ -213,7 +220,7 @@ npm run build
 npm start
 ```
 
-## Configuration
+## 🔧 Configuration
 
 | Variable | Default | Purpose |
 |---|---|---|
@@ -228,7 +235,7 @@ npm start
 
 ---
 
-## Data safety
+## 💾 Data safety
 
 All data lives in one SQLite file (`DATABASE_PATH`). It is protected in layers:
 
@@ -254,7 +261,7 @@ npm run db -- restore <file>   # stop the app first; the current database is sna
 
 `GET /api/health` reports liveness, row counts, running imports and the time of the latest snapshot.
 
-## Deployment
+## ☁️ Deployment
 
 The app keeps its state in a SQLite file, so it needs **persistent disk**: a VM, or a container with a volume. Serverless platforms such as Vercel are not supported as-is, because their file systems are ephemeral.
 
@@ -287,7 +294,7 @@ The image is a Next.js standalone server on Node 24 (~45 MB of app files). It ru
 
 `GITHUB_TOKEN` must be a fine-grained token with **Contents: read and write** on the backup repository (public data needs no extra permission). Render asks for it and for `ADMIN_PASSWORD` when the Blueprint is applied.
 
-## Capacity
+## 📈 Capacity
 
 Measured against GitHub's GraphQL API and against a database of **5,000 teams / 15,000 people**, using the production server bundle:
 
@@ -304,7 +311,7 @@ Measured against GitHub's GraphQL API and against a database of **5,000 teams / 
 
 GitHub's terms don't allow pooling several accounts' tokens to get around the hourly limit.
 
-## Architecture
+## 🧱 Architecture
 
 ```mermaid
 flowchart LR
@@ -341,7 +348,7 @@ src/
 
 ---
 
-## Development
+## 🧑‍💻 Development
 
 | Command | What it does |
 |---|---|
@@ -354,7 +361,7 @@ When changing weights or rules, edit `src/lib/scoring/individual.ts`, bump `METH
 
 ---
 
-## Limitations
+## ⚠️ Limitations
 
 - **Public data only.** Private contributions appear in the activity calendar when the user has enabled it, but can't be inspected.
 - **Team repositories** are found through merged PRs and the last 12 months of commits. An old organisation project with no recent activity isn't picked up.
@@ -364,7 +371,7 @@ When changing weights or rules, edit `src/lib/scoring/individual.ts`, bump `METH
 - **Very large histories:** the 200 most recent merged PRs are classified and the rest are assumed to follow the same mix. Commit dates are read up to 500 per project.
 - **One account per person.** Work split across two GitHub accounts is assessed separately.
 
-## Roadmap
+## 🛤️ Roadmap
 
 - A pinned evaluation cut-off date, so long batch runs measure everyone over the same 12-month window
 - A Postgres storage adapter for serverless hosting

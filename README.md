@@ -28,6 +28,7 @@
 | **Live ranking** | Thousands of teams rank in the background, appearing one by one. Survives restarts and waits out GitHub rate limits. |
 | **Selection** | Set a top-N cut-off (e.g. 800 of 5,000), search, and export CSV. |
 | **Data safety** | Verified hourly snapshots, automatic repair from the last good copy, password-protected access. |
+| **Documentation** | A colorful in-app library at `/docs`, with user, scoring, import, data, contributor, and operations guides. |
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/brand/how-dark.svg">
@@ -50,7 +51,7 @@ GITHUB_TOKEN=<token> ADMIN_PASSWORD=<password> npm start    # http://localhost:3
 
 Needs Node.js 22.13+. No external database: storage is the built-in `node:sqlite`.
 
-**[Open the documentation hub →](docs/README.md)** for the full guide, repository map, scoring method, upload formats, data safety, deployment and architecture.
+**[Open the documentation hub →](docs/README.md)** for the Markdown handbook and technical references. The deployed app's in-app Docs section is available at `/docs`.
 
 <sub>Next.js 16 · React 19 · TypeScript · SQLite · GitHub GraphQL · 105 tests</sub>
 

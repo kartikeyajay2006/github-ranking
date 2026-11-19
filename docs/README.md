@@ -8,7 +8,13 @@
 | Area | Start here | What it covers |
 |---|---|---|
 | 🟦 Product and scoring | [Full guide](guides/full-guide.md) | Product purpose, score dimensions, team weighting, file uploads, fairness, configuration, backups, deployment, capacity, architecture, and limitations. |
+| 🌈 App user guide | [App handbook](guides/app-handbook.md) | Page-by-page tour of Individuals, Teams, Upload, Method, Docs, themes, search, and exports. |
+| 🧮 Scoring details | [Scoring reference](guides/scoring-reference.md) | Dimension weights, curves, authorship, imported projects, team aggregation, bands, and update checklist. |
+| 🟠 Competition imports | [Imports handbook](guides/imports-and-ranking.md) | Supported formats, extraction, policy choices, queue state, ranking controls, and troubleshooting. |
+| 🛡️ Operations | [Operations handbook](guides/operations.md) | Access, configuration, SQLite, backup, Docker, Render, health, and recovery. |
 | 🟩 Repository | [Repository structure](reference/repository-structure.md) | The complete project tree, ownership of each folder, and where changes belong. |
+| 🧱 Data and HTTP | [Data model and API](reference/data-model-and-api.md) | Tables, migrations, route contracts, authentication, caching, and exports. |
+| 🧑‍💻 Contributor | [Contributor workflow](reference/contributor-workflow.md) | Practical checklists for changing scoring, imports, persistence, UI, and deployment. |
 | 🟨 Images and brand | [Asset library](assets/README.md) | Screenshots, README illustrations, and how the branded SVGs are generated. |
 | 🟪 Local development | [Full guide: Quick start](guides/full-guide.md#quick-start) | Requirements, environment configuration, local commands, and development workflow. |
 | 🟥 Operations | [Full guide: Data safety](guides/full-guide.md#data-safety) · [Deployment](guides/full-guide.md#deployment) | SQLite durability, snapshots, backup restore, Docker, Render, health checks, and operational limits. |
@@ -17,6 +23,10 @@
 ## 🚦 Choose a path
 
 - **New to the project?** Read the [product overview](../README.md), then the [full guide](guides/full-guide.md).
+- **Using the app?** Follow the [App handbook](guides/app-handbook.md) and the [Imports handbook](guides/imports-and-ranking.md).
+- **Reading in the browser?** Open the [interactive Docs section](/docs), filter by topic, follow its table of contents, and adjust text size.
+- **Running the service?** Use the [Operations handbook](guides/operations.md).
+- **Changing behavior?** Read the [Contributor workflow](reference/contributor-workflow.md) before editing.
 - **Changing a feature?** Use the [repository map](reference/repository-structure.md) to find the correct layer before editing.
 - **Changing scoring?** Read the [methodology](../src/app/method/page.tsx) and the scoring modules listed in the [repository map](reference/repository-structure.md#scoring-and-analysis).
 - **Running a deployment?** Follow [configuration and deployment](guides/full-guide.md#configuration) and review the backup section before exposing the site.

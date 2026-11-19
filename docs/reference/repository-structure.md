@@ -33,6 +33,7 @@ src/
 │   │   ├── health/                       Public process and data health summary
 │   │   ├── imports/[id]/                  Import progress JSON and CSV export
 │   │   └── teams/export/                  Full team standings CSV export
+│   ├── docs/                               Documentation library and local asset route
 │   ├── method/                            Public scoring methodology page
 │   ├── teams/                             Team standings and individual team detail
 │   ├── u/[login]/                         Individual GitHub assessment page
@@ -43,6 +44,8 @@ src/
 │   └── page.tsx                           Individual standings landing page
 ├── components/                            Reusable interface components
 │   ├── auto-refresh.tsx                   Refresh policy for live data views
+│   ├── docs-library.tsx                   Search/filter cards for the documentation hub
+│   ├── docs-reader.tsx                     TOC, reading progress, size controls, and code copying
 │   ├── forms.tsx                           Individual/team forms and action controls
 │   ├── heatmap.tsx                         Activity visualization
 │   ├── imports.tsx                         Upload and live import controls
@@ -51,6 +54,7 @@ src/
 │   ├── theme-toggle.tsx                    Light, dark, and automatic theme controls
 │   └── ui.tsx                              Shared score, band, avatar, and display primitives
 ├── lib/
+│   ├── docs/                               Documentation catalog and content loading
 │   ├── github/                             GitHub API access and evidence collection
 │   ├── imports/                            Reading, extracting, scoring, and queueing imports
 │   ├── scoring/                            Pure scoring rules and score dimensions

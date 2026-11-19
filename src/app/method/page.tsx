@@ -74,7 +74,7 @@ export default function MethodPage() {
           </ul>
 
           <h2 id="dimensions">Dimensions</h2>
-          <p>The total is a weighted sum of five dimensions, each scored 0–100. The score ledger on every profile shows each factor&rsquo;s points.</p>
+          <p>The total is a weighted sum of six dimensions, each scored 0–100. The score ledger on every profile shows each factor&rsquo;s points.</p>
           <table className="spec">
             <thead>
               <tr>
