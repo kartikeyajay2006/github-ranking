@@ -21,8 +21,8 @@
 | Feature | What you get |
 |---|---|
 | **Individuals** | Paste usernames or profile links and get a 0–100 score with a ledger of every factor. |
-| **Teams** | The lead carries 1.2× an equal share (40/30/30 for three; a solo team is 100%). Members can be added any time. |
-| **Upload** | Drop a PDF, Word, Excel or CSV file, a Google Docs/Sheets link (any tab), or pasted text. Teams, leads, members, emails, GitHub accounts, statuses and best-project links are pulled out automatically. |
+| **Teams** | The lead carries 1.2× an equal share (40/30/30 for three; a solo team is 100%). Members can be added any time. Search by team, lead or member, several at once separated by commas; the same people are never listed as two teams. |
+| **Upload** | Drop a PDF, Word, Excel or CSV file, a Google Docs/Sheets link (any tab), or pasted text. Teams, leads, members, emails, GitHub accounts, statuses and best-project links are pulled out automatically. Importing the same sheet again replaces the earlier import once the re-run finishes, so no team appears twice. |
 | **Best project** | Each person's named repository is graded on its own (substance, engineering, completeness, recognition × how much of it they wrote) and blended with their profile, 70/30 by default. Re-weight any time, instantly. |
 | **Messy data** | Same-named teams kept apart and labelled by their lead, re-registrations merged, people in two teams flagged, withdrawn entries left out. |
 | **Live ranking** | Thousands of teams rank in the background, appearing one by one. Survives restarts and waits out GitHub rate limits. |

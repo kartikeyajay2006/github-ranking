@@ -335,14 +335,41 @@ export function finishTeam(
     );
 }
 
-/** Marks running jobs with nothing left to do as done. */
+/** Marks running jobs with nothing left to do as done. A finished re-run replaces earlier imports of the same document. */
 export function settleJobs() {
+  const finishing = db()
+    .prepare(
+      `SELECT id FROM import_jobs WHERE status = 'running'
+         AND NOT EXISTS (SELECT 1 FROM import_teams t WHERE t.job_id = import_jobs.id AND t.status IN ('pending', 'running'))`,
+    )
+    .all() as { id: string }[];
+  if (!finishing.length) return;
   db()
     .prepare(
       `UPDATE import_jobs SET status = 'done', finished_at = ?, note = NULL
         WHERE status = 'running' AND NOT EXISTS (SELECT 1 FROM import_teams t WHERE t.job_id = import_jobs.id AND t.status IN ('pending', 'running'))`,
     )
     .run(Date.now());
+  for (const { id } of finishing) for (const old of supersededBy(id)) deleteJob(old);
+}
+
+/**
+ * Earlier finished imports of the same document (same import name or same source), which a completed
+ * re-run replaces so that no team is listed twice. Only finished imports are replaced, and only by a
+ * newer one that has itself finished; deleteJob keeps a snapshot first.
+ */
+export function supersededBy(id: string): string[] {
+  const job = db().prepare("SELECT id, name, source, created_at FROM import_jobs WHERE id = ?").get(id) as
+    | { id: string; name: string; source: string; created_at: number }
+    | undefined;
+  if (!job) return [];
+  const rows = db()
+    .prepare(
+      `SELECT id FROM import_jobs WHERE id != ? AND status = 'done' AND created_at < ?
+         AND (lower(trim(name)) = lower(trim(?)) OR source = ?)`,
+    )
+    .all(job.id, job.created_at, job.name, job.source) as { id: string }[];
+  return rows.map((r) => r.id);
 }
 
 /** After a restart, teams caught mid-analysis go back in the queue. */

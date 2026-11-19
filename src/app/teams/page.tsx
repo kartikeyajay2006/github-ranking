@@ -10,13 +10,35 @@ const PAGE_SIZE = 100;
 
 export const metadata: Metadata = { title: "Teams" };
 
-export default async function TeamsPage({ searchParams }: { searchParams: Promise<{ page?: string }> }) {
+/** Comma-separated search terms: "apex, nexora, @someone" finds every team matching any of them. */
+function searchTerms(q: string): string[] {
+  return q
+    .split(/[,\n]/)
+    .map((t) => t.trim().replace(/^@/, "").toLowerCase())
+    .filter(Boolean)
+    .slice(0, 50);
+}
+
+export default async function TeamsPage({ searchParams }: { searchParams: Promise<{ page?: string; q?: string }> }) {
   await connection();
-  const { rows, firstAt, imports } = teamStandings();
-  const teams = rows.map((r) => r.team);
+  const params = await searchParams;
+  const { rows: all, firstAt, imports } = teamStandings();
+  const teams = all.map((r) => r.team);
+  const q = (params.q ?? "").slice(0, 500);
+  const terms = searchTerms(q);
+  // A team matches when any term is part of its name, its lead, or any member's username or name.
+  const rows = terms.length
+    ? all.filter(({ team, members }) => {
+        const hay = [team.name, team.leader ?? "", ...members.map((m) => m.login), ...team.absent.map((a) => `${a.name ?? ""} ${a.github ?? ""}`)]
+          .join("\n")
+          .toLowerCase();
+        return terms.some((t) => hay.includes(t));
+      })
+    : all;
   const pages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
-  const page = Math.min(pages, Math.max(1, Number((await searchParams).page) || 1));
+  const page = Math.min(pages, Math.max(1, Number(params.page) || 1));
   const shown = rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const pageHref = (n: number) => `/teams?${new URLSearchParams({ ...(q ? { q } : {}), page: String(n) })}`;
 
   return (
     <div className="wrap">
@@ -43,7 +65,43 @@ export default async function TeamsPage({ searchParams }: { searchParams: Promis
 
       <CreateTeam action={createOrExtendTeam} />
 
-      {rows.length === 0 ? (
+      {all.length > 0 && (
+        <form className="team-search" action="/teams" method="get" role="search">
+          <label className="sr-only" htmlFor="team-q">
+            Search teams
+          </label>
+          <input
+            id="team-q"
+            className="input"
+            type="search"
+            name="q"
+            defaultValue={q}
+            placeholder="Search teams — separate several with commas: apex, nexora, @username"
+            autoComplete="off"
+            spellCheck={false}
+          />
+          <button className="btn" type="submit">
+            Search
+          </button>
+          {q && (
+            <Link className="btn ghost" href="/teams">
+              Clear
+            </Link>
+          )}
+          {terms.length > 0 && (
+            <p className="muted team-search-count">
+              {rows.length} of {all.length} teams match {terms.length === 1 ? `“${terms[0]}”` : `${terms.length} searches`}. Ranks are overall ranks.
+            </p>
+          )}
+        </form>
+      )}
+
+      {all.length > 0 && rows.length === 0 ? (
+        <div className="empty-state">
+          <h3>No team matches.</h3>
+          <p>Try part of a team name, a lead or a member&rsquo;s username. Separate several searches with commas.</p>
+        </div>
+      ) : rows.length === 0 ? (
         <div className="empty-state">
           <h3>No teams yet.</h3>
           <p>Create one above. You can start with a single member and add the rest later; the score updates as people join.</p>
@@ -136,7 +194,7 @@ export default async function TeamsPage({ searchParams }: { searchParams: Promis
           {pages > 1 && (
             <nav className="pager" aria-label="Pages">
               {page > 1 && (
-                <Link className="btn ghost small" href={`/teams?page=${page - 1}`}>
+                <Link className="btn ghost small" href={pageHref(page - 1)}>
                   Previous
                 </Link>
               )}
@@ -144,7 +202,7 @@ export default async function TeamsPage({ searchParams }: { searchParams: Promis
                 {page} / {pages}
               </span>
               {page < pages && (
-                <Link className="btn ghost small" href={`/teams?page=${page + 1}`}>
+                <Link className="btn ghost small" href={pageHref(page + 1)}>
                   Next
                 </Link>
               )}

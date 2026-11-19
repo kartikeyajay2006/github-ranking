@@ -2131,3 +2131,21 @@ tr:nth-child(-n + 3) .rank {
   color: var(--accent-ink);
   background: var(--accent-soft);
 }
+
+/* Teams search: one row, wraps on small screens */
+.team-search {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-top: 32px;
+}
+.team-search .input {
+  flex: 1 1 360px;
+  min-width: 0;
+}
+.team-search-count {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 13px;
+}

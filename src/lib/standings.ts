@@ -21,7 +21,19 @@ let cache: { version: number; rows: TeamStanding[]; firstAt: Map<number, number>
 export function teamStandings() {
   const version = dataVersion();
   if (cache && cache.version === version) return cache;
-  const teams = listTeams();
+  // The same people listed as more than one team (a manual copy, or an import and its re-run) are shown
+  // once: the newest team wins. Teams that merely share a name but not their people stay separate.
+  const seen = new Set<string>();
+  const teams = [...listTeams()]
+    .sort((a, b) => b.createdAt - a.createdAt)
+    .filter((t) => {
+      const people = [...t.members.map((m) => `gh:${m.login.toLowerCase()}`), ...t.absent.map((a) => `x:${(a.github ?? a.label).toLowerCase()}`)].sort();
+      if (!people.length) return true;
+      const key = people.join("|");
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
   const profiles = getSummaries([...new Set(teams.flatMap((t) => t.members.map((m) => m.login)))]);
   // Imported teams are ranked on their import score (GitHub profile + best project), the same number the
   // import page and CSV show; the dimension profile still comes from members' GitHub assessments.
