@@ -21,11 +21,13 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     "Rank",
     "Team, leader & members",
     "Overall team score",
+    "Leader email",
+    "Other members' emails",
+    "Other members' colleges",
     "Band",
     "Selected",
     "GitHub score",
     "Best project score",
-    "Member e-mails",
     "Best project links",
     "Member score components (GitHub / best project)",
     "Status",
@@ -58,18 +60,27 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const memberComponents = (t: ReturnType<typeof jobTeams>[number]) => (t.breakdown ?? [])
     .map((member) => `${member.name ?? member.login ?? member.label.replace(/^~/, "")}: ${member.github.toFixed(1)} / ${member.project === null ? "—" : member.project.toFixed(1)}${member.projectRepo ? ` (${member.projectRepo})` : member.projectNote ? ` (${member.projectNote})` : ""}`)
     .join("; ");
-  const memberEmails = (t: ReturnType<typeof jobTeams>[number]) => t.members.map((m) => m.email).filter(Boolean).join("; ");
+  const leadMember = (t: ReturnType<typeof jobTeams>[number]) => t.leader !== null ? t.members[t.leader] : null;
+  const leaderEmail = (t: ReturnType<typeof jobTeams>[number]) => leadMember(t)?.email ?? "";
+  const memberEmails = (t: ReturnType<typeof jobTeams>[number]) => t.members
+    .filter((_member, index) => index !== t.leader)
+    .map((member) => member.email)
+    .filter(Boolean)
+    .join("; ");
+  const colleges = (t: ReturnType<typeof jobTeams>[number]) => t.members
+    .flatMap((member, index) => index !== t.leader && member.college?.trim() ? [`${member.name?.trim() || "Member"}: ${member.college.trim()}`] : [])
+    .join("; ");
   const projects = (t: ReturnType<typeof jobTeams>[number]) => t.members.map((m) => m.project).filter(Boolean).join("; ");
   rankedTeams(id).forEach((t, i) => {
     const selected = !isSelectable(t.band) ? "no (insufficient)" : job.cutoff ? (i < job.cutoff ? "yes" : "no") : "";
     lines.push(
-      [i + 1, roster(t), t.score?.toFixed(1), t.band, selected, t.githubScore?.toFixed(1), t.projectScore?.toFixed(1), memberEmails(t), projects(t), memberComponents(t), "ranked", t.warnings.join(" "), weighting]
+      [i + 1, roster(t), t.score?.toFixed(1), leaderEmail(t), memberEmails(t), colleges(t), t.band, selected, t.githubScore?.toFixed(1), t.projectScore?.toFixed(1), projects(t), memberComponents(t), "ranked", t.warnings.join(" "), weighting]
         .map(cell)
         .join(","),
     );
   });
   for (const t of jobTeams(id).filter((x) => x.status !== "done")) {
-    lines.push(["", roster(t), "", "", "", "", "", memberEmails(t), projects(t), memberComponents(t), t.status, t.error ?? t.warnings.join(" "), weighting].map(cell).join(","));
+    lines.push(["", roster(t), "", leaderEmail(t), memberEmails(t), colleges(t), "", "", "", "", projects(t), memberComponents(t), t.status, t.error ?? t.warnings.join(" "), weighting].map(cell).join(","));
   }
   const filename = `${job.name.replace(/[^\w.-]+/g, "-").slice(0, 60) || "ranking"}.csv`;
   return new Response("﻿" + lines.join("\r\n"), {

@@ -16,6 +16,8 @@ export interface ExtractedMember {
   email: string | null;
   github: string | null;
   leader: boolean;
+  /** College or institution copied from a structured registration row when available. */
+  college?: string | null;
   /** The link they gave for their best project (a GitHub repository is graded; other links are kept for reference). */
   project?: string | null;
   /** Marked withdrawn / cancelled in the source. Left out of ranking by default. */
@@ -137,6 +139,7 @@ function dedupe(members: ExtractedMember[], warnings: string[]): ExtractedMember
       same.name ??= m.name;
       same.email ??= m.email;
       same.github ??= m.github;
+      same.college ??= m.college;
       same.project ??= m.project;
       same.leader ||= m.leader;
       // Listed twice, once active and once withdrawn: they are active.
@@ -230,7 +233,7 @@ export function finalise(teams: ExtractedTeam[]): ExtractedTeam[] {
 
 /* ------------------------------------------------------------------ rows ------------------------------------------------------------------ */
 
-type Field = "name" | "email" | "github" | "role" | "project" | "status";
+type Field = "name" | "email" | "github" | "role" | "project" | "status" | "college";
 interface Column {
   index: number;
   team?: true;
@@ -254,6 +257,7 @@ function classifyHeader(header: string, index: number): Column {
   else if (/^(status|registration status|application status|participation status|state)$/.test(h)) col.field = "status";
   else if (/git ?hub|\bgh\b/.test(h)) col.field = "github";
   else if (/e-?mail|mail id/.test(h)) col.field = "email";
+  else if (/\bcollege\b|\buniversity\b|\binstitution\b|\bschool\b/.test(h)) col.field = "college";
   else if (/\brole\b|position|designation|are you (the )?(team )?lead/.test(h)) col.field = "role";
   else if (/\bname\b|^participant|^member|^teammate/.test(h)) col.field = "name";
   if (!col.field) return col;
@@ -316,6 +320,7 @@ export function fromRows(rows: string[][]): Extraction | null {
         if (c.field === "name") person.name = cleanName(v);
         if (c.field === "email") person.email = emailsIn(v)[0] ?? null;
         if (c.field === "github") person.github = handleFromCell(v);
+        if (c.field === "college") person.college = v || null;
         if (c.field === "role") person.leader = /lead|captain|head|yes|true|poc/i.test(v);
         if (c.field === "status" && WITHDRAWN.test(v)) person.withdrawn = true;
         if (c.field === "project" && !person.project) person.project = projectLink(v);
@@ -376,6 +381,7 @@ export function fromRows(rows: string[][]): Extraction | null {
       if (c.field === "name") p.name = cleanName(v);
       if (c.field === "email") p.email = emailsIn(v)[0] ?? null;
       if (c.field === "github") p.github = handleFromCell(v);
+      if (c.field === "college") p.college = v || null;
       if (c.field === "role" && /lead|captain|yes|true/i.test(v)) p.leader = true;
     }
     // GitHub links in columns nobody recognised (e.g. "Profiles of all participants").

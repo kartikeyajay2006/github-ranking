@@ -24,6 +24,7 @@ const TeamsSchema = z.object({
         z.object({
           name: z.string().nullable(),
           email: z.string().nullable(),
+          college: z.string().nullable(),
           github: z.string().nullable(),
           is_leader: z.boolean(),
         }),
@@ -34,7 +35,7 @@ const TeamsSchema = z.object({
 
 const SYSTEM = `You extract hackathon team registrations from documents for an organiser who will rank the teams.
 
-For every team in the document excerpt, return its name and every member: their name, e-mail and GitHub account, and whether they are the team leader.
+For every team in the document excerpt, return its name and every member: their name, e-mail, college or institution when present, GitHub account, and whether they are the team leader.
 
 Rules:
 - Copy names and e-mails exactly as written. Never invent or guess values; use null when a field is absent.
@@ -87,6 +88,7 @@ async function extractChunk(client: Anthropic, excerpt: string, part: number, to
     members: t.members.map((m) => ({
       name: m.name?.trim() || null,
       email: m.email?.trim().toLowerCase() || null,
+      college: m.college?.trim() || null,
       github: m.github ? handleFromCell(m.github) : null,
       leader: m.is_leader,
     })),
