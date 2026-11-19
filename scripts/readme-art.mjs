@@ -1,8 +1,8 @@
-// Generates the animated README art in docs/readme/ (light + dark), SMIL only so GitHub animates it.
+// Generates the animated README art in docs/assets/brand/ (light + dark), SMIL only so GitHub animates it.
 //   node scripts/readme-art.mjs
 import { mkdirSync, writeFileSync } from "node:fs";
 
-const OUT = new URL("../docs/readme/", import.meta.url);
+const OUT = new URL("../docs/assets/brand/", import.meta.url);
 mkdirSync(OUT, { recursive: true });
 
 const THEMES = {
@@ -263,4 +263,4 @@ for (const [mode, t] of Object.entries(THEMES)) {
   writeFileSync(new URL(`how-${mode}.svg`, OUT), how(t));
   writeFileSync(new URL(`access-${mode}.svg`, OUT), access(t));
 }
-console.log("docs/readme: hero, how, access × light, dark");
+console.log("docs/assets/brand: hero, how, access × light, dark");

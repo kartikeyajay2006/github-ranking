@@ -1,12 +1,12 @@
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/readme/hero-dark.svg">
-  <img alt="github-ranking: GitHub accounts flow through six weighted scoring gates and separate into bands; a cut-off selects the top teams." src="docs/readme/hero-light.svg" width="100%">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/brand/hero-dark.svg">
+  <img alt="github-ranking: GitHub accounts flow through six weighted scoring gates and separate into bands; a cut-off selects the top teams." src="docs/assets/brand/hero-light.svg" width="100%">
 </picture>
 
 <a href="mailto:kartikeya2006jay@gmail.com?subject=github-ranking%20access">
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/readme/access-dark.svg">
-  <img alt="No public link. For access or your own instance, email kartikeya2006jay@gmail.com" src="docs/readme/access-light.svg" width="100%">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/brand/access-dark.svg">
+  <img alt="No public link. For access or your own instance, email kartikeya2006jay@gmail.com" src="docs/assets/brand/access-light.svg" width="100%">
 </picture>
 </a>
 
@@ -30,8 +30,8 @@
 | **Data safety** | Verified hourly snapshots, automatic repair from the last good copy, password-protected access. |
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/readme/how-dark.svg">
-  <img alt="How a score is built: six weighted dimensions add up to a total out of 100; in teams the lead carries 1.2 times an equal share." src="docs/readme/how-light.svg" width="100%">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/brand/how-dark.svg">
+  <img alt="How a score is built: six weighted dimensions add up to a total out of 100; in teams the lead carries 1.2 times an equal share." src="docs/assets/brand/how-light.svg" width="100%">
 </picture>
 
 ## Bands
@@ -50,7 +50,7 @@ GITHUB_TOKEN=<token> ADMIN_PASSWORD=<password> npm start    # http://localhost:3
 
 Needs Node.js 22.13+. No external database: storage is the built-in `node:sqlite`.
 
-**[Read the full guide →](docs/GUIDE.md)** for the scoring method, fairness rules, upload formats, data safety, deployment and architecture.
+**[Open the documentation hub →](docs/README.md)** for the full guide, repository map, scoring method, upload formats, data safety, deployment and architecture.
 
 <sub>Next.js 16 · React 19 · TypeScript · SQLite · GitHub GraphQL · 105 tests</sub>
 

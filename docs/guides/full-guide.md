@@ -1,17 +1,17 @@
 # github-ranking · full guide
 
-[← Back to the README](../README.md)
+[← Back to the documentation hub](../README.md)
 
 **Evidence-based assessment and ranking of GitHub developers and teams.**
 
 Paste a username and get a score out of 100. Every point traces back to public GitHub evidence and a fixed, published rule. The score measures what the person **built themselves**: how good their projects are, how much of them they wrote, and what other maintainers accepted from them. Stars, followers and commit counts can be inflated, so they matter much less.
 
-![Individual standings, dark theme](screenshots/standings-dark.png)
+![Individual standings, dark theme](../assets/screenshots/standings-dark.png)
 
 <table>
   <tr>
-    <td width="50%"><img src="screenshots/profile-light.png" alt="Developer profile with the score ledger"></td>
-    <td width="50%"><img src="screenshots/team-dark.png" alt="Team page with lead-weighted score composition"></td>
+    <td width="50%"><img src="../assets/screenshots/profile-light.png" alt="Developer profile with the score ledger"></td>
+    <td width="50%"><img src="../assets/screenshots/team-dark.png" alt="Team page with lead-weighted score composition"></td>
   </tr>
   <tr>
     <td align="center"><sub>Profile: every factor, its evidence and the points it earned</sub></td>
