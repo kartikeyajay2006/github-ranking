@@ -83,6 +83,9 @@ export default async function TeamsPage({ searchParams }: { searchParams: Promis
           <button className="btn" type="submit">
             Search
           </button>
+          <a className="btn ghost" href="/api/teams/export">
+            Download full ranking CSV
+          </a>
           {q && (
             <Link className="btn ghost" href="/teams">
               Clear
