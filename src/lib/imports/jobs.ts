@@ -267,8 +267,46 @@ export function deferRunning(until: number, note: string) {
   db().prepare("UPDATE import_jobs SET resume_at = ?, note = ? WHERE status = 'running'").run(until, note);
 }
 
+/**
+ * A GitHub glitch (timeout, 5xx) is never the team's fault: the team goes back in the queue and waits a
+ * little longer each time, so the rest of the import keeps moving. Returns false once it has had
+ * MAX_ATTEMPTS tries, and the caller then marks it failed with the reason.
+ */
+export const MAX_ATTEMPTS = 6;
+export function requeueLater(jobId: string, idx: number, note: string): boolean {
+  const row = db().prepare("SELECT attempts FROM import_teams WHERE job_id = ? AND idx = ?").get(jobId, idx) as { attempts: number } | undefined;
+  const attempts = (row?.attempts ?? 0) + 1;
+  if (attempts >= MAX_ATTEMPTS) {
+    db().prepare("UPDATE import_teams SET attempts = ? WHERE job_id = ? AND idx = ?").run(attempts, jobId, idx);
+    return false;
+  }
+  const wait = Math.min(15 * 60_000, 60_000 * 2 ** (attempts - 1)); // 1, 2, 4, 8, 15 min
+  db()
+    .prepare("UPDATE import_teams SET status = 'pending', attempts = ?, retry_at = ?, error = ? WHERE job_id = ? AND idx = ?")
+    .run(attempts, Date.now() + wait, note, jobId, idx);
+  return true;
+}
+
+/** Teams that failed only because of a GitHub glitch go back in the queue by themselves (on every start). */
+export function requeueGlitched(): number {
+  const rows = db()
+    .prepare("SELECT DISTINCT job_id FROM import_teams WHERE status = 'failed' AND error LIKE 'GitHub error while analysing%'")
+    .all() as { job_id: string }[];
+  if (!rows.length) return 0;
+  let n = 0;
+  for (const { job_id } of rows) {
+    n += Number(
+      db()
+        .prepare("UPDATE import_teams SET status = 'pending', error = NULL, attempts = 0, retry_at = NULL WHERE job_id = ? AND status = 'failed' AND error LIKE 'GitHub error while analysing%'")
+        .run(job_id).changes,
+    );
+    db().prepare("UPDATE import_jobs SET status = 'running', finished_at = NULL, note = NULL WHERE id = ?").run(job_id);
+  }
+  return n;
+}
+
 export function retryFailed(id: string) {
-  db().prepare("UPDATE import_teams SET status = 'pending', error = NULL WHERE job_id = ? AND status = 'failed'").run(id);
+  db().prepare("UPDATE import_teams SET status = 'pending', error = NULL, attempts = 0, retry_at = NULL WHERE job_id = ? AND status = 'failed'").run(id);
   db().prepare("UPDATE import_jobs SET status = 'running', finished_at = NULL, note = NULL WHERE id = ?").run(id);
 }
 
@@ -288,9 +326,10 @@ export function claimNext(now = Date.now()): (ImportTeam & { job: ImportJob }) |
       .prepare(
         `SELECT t.* FROM import_teams t JOIN import_jobs j ON j.id = t.job_id
           WHERE j.status = 'running' AND (j.resume_at IS NULL OR j.resume_at <= ?) AND t.status = 'pending'
+            AND (t.retry_at IS NULL OR t.retry_at <= ?)
           ORDER BY j.created_at ASC, t.idx ASC LIMIT 1`,
       )
-      .get(now) as TeamRowDb | undefined;
+      .get(now, now) as TeamRowDb | undefined;
     if (!row) return null;
     db().prepare("UPDATE import_teams SET status = 'running' WHERE job_id = ? AND idx = ?").run(row.job_id, row.idx);
     db().prepare("UPDATE import_jobs SET resume_at = NULL, note = NULL WHERE id = ? AND resume_at IS NOT NULL").run(row.job_id);
@@ -379,7 +418,14 @@ export function requeueInterrupted() {
 
 export function earliestResume(): number | null {
   const row = db().prepare("SELECT MIN(resume_at) AS t FROM import_jobs WHERE status = 'running' AND resume_at IS NOT NULL").get() as { t: number | null };
-  return row.t;
+  // Teams cooling off after a GitHub glitch wake the queue too.
+  const cool = db()
+    .prepare(
+      `SELECT MIN(t.retry_at) AS t FROM import_teams t JOIN import_jobs j ON j.id = t.job_id
+        WHERE j.status = 'running' AND t.status = 'pending' AND t.retry_at IS NOT NULL`,
+    )
+    .get() as { t: number | null };
+  return [row.t, cool.t].filter((x): x is number => x !== null).sort((a, b) => a - b)[0] ?? null;
 }
 
 /** Final ranking scores (GitHub + best project) of imported teams, by team id. */

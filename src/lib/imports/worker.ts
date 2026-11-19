@@ -6,7 +6,7 @@ import { type MemberBreakdown, teamScore } from "../scoring/project";
 import { addTeamMembers, createTeam, deleteTeam, getSummaries, getTeam, setTeamAbsent, updateTeam } from "../store";
 import { scoreTeam } from "../teamscore";
 import type { AbsentMember } from "../types";
-import { claimNext, deferRunning, earliestResume, finishTeam, hasRunningJob, requeueInterrupted, settleJobs, type ImportJob, type ImportTeam } from "./jobs";
+import { claimNext, deferRunning, earliestResume, finishTeam, hasRunningJob, requeueGlitched, requeueInterrupted, requeueLater, settleJobs, type ImportJob, type ImportTeam } from "./jobs";
 
 /**
  * Ranks imported teams one at a time in the background. Each finished team is written to the
@@ -35,6 +35,7 @@ export function kickWorker() {
 
 export function resumeOnBoot() {
   requeueInterrupted();
+  requeueGlitched();
   kickWorker();
   keepAwakeWhileRanking();
 }
@@ -72,7 +73,14 @@ async function loop() {
     for (;;) {
       const next = claimNext();
       if (!next) return;
-      await processTeam(next, next.job);
+      try {
+        await processTeam(next, next.job);
+      } catch (err) {
+        // An unexpected error on one team must never stop the queue or strand the team.
+        console.error("[imports] team failed unexpectedly:", err);
+        if (!requeueLater(next.job.id, next.idx, `Unexpected error: ${(err as Error).message}. Trying again shortly.`))
+          finishTeam(next.job.id, next.idx, { status: "failed", error: `GitHub error while analysing this team: ${(err as Error).message}`, warnings: next.warnings });
+      }
     }
   };
   await Promise.all(Array.from({ length: LANES }, lane));
@@ -112,11 +120,11 @@ async function processTeam(team: ImportTeam, job: ImportJob) {
   // A transient GitHub failure is not the team's fault: mark it failed so "Retry failed" can redo it.
   const transient = results.filter((r) => !r.ok && r.kind !== "not_found" && r.kind !== "invalid");
   if (transient.length) {
-    finishTeam(job.id, team.idx, {
-      status: "failed",
-      error: `GitHub error while analysing ${transient.map((r) => `@${r.input}`).join(", ")}: ${transient[0]!.message} Use “Retry failed”.`,
-      warnings: team.warnings,
-    });
+    const why = `GitHub error while analysing ${transient.map((r) => `@${r.input}`).join(", ")}: ${transient[0]!.message}`;
+    // A glitch is not the team's fault: it waits a little longer each time (1, 2, 4, 8, 15 min) while the
+    // rest of the import carries on, and only fails after several tries.
+    if (requeueLater(job.id, team.idx, `${why} Trying again shortly.`)) return;
+    finishTeam(job.id, team.idx, { status: "failed", error: `${why} It was tried ${6} times; use “Retry failed”.`, warnings: team.warnings });
     return;
   }
 

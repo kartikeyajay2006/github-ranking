@@ -91,7 +91,8 @@ function migrate(conn: DatabaseSync) {
     !columns("teams").includes("absent") ||
     !columns("import_jobs").includes("missing_policy") ||
     !columns("import_jobs").includes("project_weight") ||
-    !columns("import_teams").includes("breakdown");
+    !columns("import_teams").includes("breakdown") ||
+    !columns("import_teams").includes("attempts");
   if (pending && (conn.prepare("SELECT COUNT(*) AS n FROM profiles").get() as { n: number }).n > 0) backupNow(conn, "pre-migration");
   if (!columns("teams").includes("job_id")) conn.exec("ALTER TABLE teams ADD COLUMN job_id TEXT");
   if (!columns("profiles").includes("summary")) conn.exec("ALTER TABLE profiles ADD COLUMN summary TEXT");
@@ -106,6 +107,10 @@ function migrate(conn: DatabaseSync) {
     conn.exec("ALTER TABLE import_teams ADD COLUMN breakdown TEXT");
     conn.exec("ALTER TABLE import_teams ADD COLUMN github_score REAL");
     conn.exec("ALTER TABLE import_teams ADD COLUMN project_score REAL");
+  }
+  if (!columns("import_teams").includes("attempts")) {
+    conn.exec("ALTER TABLE import_teams ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0");
+    conn.exec("ALTER TABLE import_teams ADD COLUMN retry_at INTEGER");
   }
   conn.exec("CREATE INDEX IF NOT EXISTS teams_job ON teams(job_id)");
 }

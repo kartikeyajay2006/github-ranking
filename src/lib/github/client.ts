@@ -90,7 +90,7 @@ export async function graphql<T>(
 async function request<T>(
   query: string,
   variables: Record<string, unknown>,
-  { retries = 1, timeoutMs = 30_000 }: { retries?: number; timeoutMs?: number },
+  { retries = 2, timeoutMs = 30_000 }: { retries?: number; timeoutMs?: number },
 ): Promise<{ data: T; errors: NonNullable<GraphQLResponse<T>["errors"]> }> {
   const auth = await token();
   let throttled = 0;
@@ -110,7 +110,10 @@ async function request<T>(
       });
     } catch (err) {
       if ((err as Error).name === "TimeoutError") {
-        if (attempt < retries) continue;
+        if (attempt < retries) {
+          await sleep(2000 * (attempt + 1));
+          continue;
+        }
         throw new GitHubError("GitHub did not answer in time.", "upstream");
       }
       throw new GitHubError(`Could not reach GitHub: ${(err as Error).message}`, "upstream");
@@ -133,7 +136,8 @@ async function request<T>(
     }
     if (res.status >= 500) {
       if (attempt < retries) {
-        await sleep(800 * (attempt + 1));
+        // GitHub's 502/503 on a heavy query usually clears within seconds.
+        await sleep(2500 * 2 ** attempt);
         continue;
       }
       throw new GitHubError(`GitHub returned ${res.status} for an expensive query.`, "upstream");
