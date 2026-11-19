@@ -1,5 +1,6 @@
 import { getJob, jobTeams, rankedTeams } from "@/lib/imports/jobs";
 import { isSelectable } from "@/lib/scoring/individual";
+import { personScore } from "@/lib/scoring/project";
 
 export const dynamic = "force-dynamic";
 
@@ -9,7 +10,7 @@ const cell = (v: unknown) => {
   return `"${(/^[=+\-@]/.test(s) ? `'${s}` : s).replace(/"/g, '""')}"`;
 };
 
-/** The ranking as CSV: completed teams best first, then failed and unfinished ones. */
+/** The competition ranking as CSV: one ranked team per row, then failed and unfinished teams. */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const job = getJob(id);
@@ -18,46 +19,57 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const weighting = w ? `${100 - w}% GitHub + ${w}% best project${job.projectMissing === "github" ? " (GitHub only without a gradable project)" : " (missing project = 0)"}` : "GitHub only";
   const header = [
     "Rank",
-    "Team",
-    "Score",
+    "Team, leader & members",
+    "Overall team score",
     "Band",
     "Selected",
     "GitHub score",
     "Best project score",
-    "Lead name",
-    "Lead GitHub",
-    "Members (name @github)",
     "Member e-mails",
-    "Member scores (GitHub / best project)",
     "Best project links",
+    "Member score components (GitHub / best project)",
     "Status",
     "Notes",
   ];
   header.push("Scoring");
   const lines = [header.map(cell).join(",")];
-  const describe = (t: ReturnType<typeof jobTeams>[number]) => [
-    t.members.map((m) => `${m.name ?? ""}${m.github ? ` @${m.github}` : " (no GitHub)"}`.trim()).join("; "),
-    t.members.map((m) => m.email).filter(Boolean).join("; "),
-  ];
-  const scores = (t: ReturnType<typeof jobTeams>[number]) => [
-    (t.breakdown ?? [])
-      .map((b) => `${b.name ?? b.login ?? b.label.replace(/^~/, "")}: ${b.github.toFixed(1)} / ${b.project === null ? "—" : b.project.toFixed(1)}${b.projectRepo ? ` (${b.projectRepo})` : b.projectNote ? ` (${b.projectNote})` : ""}`)
-      .join("; "),
-    t.members.map((m) => m.project).filter(Boolean).join("; "),
-  ];
-  rankedTeams(id).forEach((t, i) => {
+  const roster = (t: ReturnType<typeof jobTeams>[number]) => {
+    const findScore = (member: (typeof t.members)[number], index: number) => {
+      const breakdown = t.breakdown ?? [];
+      const score = index === t.leader
+        ? breakdown.find((m) => m.isLeader)
+        : member.github
+          ? breakdown.find((m) => m.login?.toLowerCase() === member.github!.toLowerCase() || m.label.toLowerCase() === member.github!.toLowerCase())
+          : breakdown.find((m) => !m.login && [member.name, member.email].some((value) => value && (m.name?.toLowerCase() === value.toLowerCase() || m.label.replace(/^~/, "").toLowerCase() === value.toLowerCase())));
+      return score ? personScore(score.github, score.project, job.projectWeight, job.projectMissing).toFixed(1) : "—";
+    };
+    const describe = (member: (typeof t.members)[number], index: number) => {
+      const identity = `${member.name?.trim() || "Unnamed"}${member.github ? ` (@${member.github})` : " (no GitHub)"}`;
+      return `${identity} — ${findScore(member, index)}`;
+    };
     const lead = t.leader !== null ? t.members[t.leader] : null;
+    const members = t.members.map((member, index) => ({ member, index })).filter(({ index }) => index !== t.leader);
+    return [
+      `Team: ${t.name}`,
+      lead ? `Leader: ${describe(lead, t.leader!)}` : "Leader: not designated",
+      ...(members.length ? ["Members:", ...members.map(({ member, index }) => `• ${describe(member, index)}`)] : []),
+    ].join("\n");
+  };
+  const memberComponents = (t: ReturnType<typeof jobTeams>[number]) => (t.breakdown ?? [])
+    .map((member) => `${member.name ?? member.login ?? member.label.replace(/^~/, "")}: ${member.github.toFixed(1)} / ${member.project === null ? "—" : member.project.toFixed(1)}${member.projectRepo ? ` (${member.projectRepo})` : member.projectNote ? ` (${member.projectNote})` : ""}`)
+    .join("; ");
+  const memberEmails = (t: ReturnType<typeof jobTeams>[number]) => t.members.map((m) => m.email).filter(Boolean).join("; ");
+  const projects = (t: ReturnType<typeof jobTeams>[number]) => t.members.map((m) => m.project).filter(Boolean).join("; ");
+  rankedTeams(id).forEach((t, i) => {
     const selected = !isSelectable(t.band) ? "no (insufficient)" : job.cutoff ? (i < job.cutoff ? "yes" : "no") : "";
-    const [names, emails] = describe(t);
     lines.push(
-      [i + 1, t.name, t.score?.toFixed(1), t.band, selected, t.githubScore?.toFixed(1), t.projectScore?.toFixed(1), lead?.name, lead?.github, names, emails, ...scores(t), "ranked", t.warnings.join(" "), weighting]
+      [i + 1, roster(t), t.score?.toFixed(1), t.band, selected, t.githubScore?.toFixed(1), t.projectScore?.toFixed(1), memberEmails(t), projects(t), memberComponents(t), "ranked", t.warnings.join(" "), weighting]
         .map(cell)
         .join(","),
     );
   });
   for (const t of jobTeams(id).filter((x) => x.status !== "done")) {
-    const [names, emails] = describe(t);
-    lines.push(["", t.name, "", "", "", "", "", "", "", names, emails, "", t.members.map((m) => m.project).filter(Boolean).join("; "), t.status, t.error ?? t.warnings.join(" "), weighting].map(cell).join(","));
+    lines.push(["", roster(t), "", "", "", "", "", memberEmails(t), projects(t), memberComponents(t), t.status, t.error ?? t.warnings.join(" "), weighting].map(cell).join(","));
   }
   const filename = `${job.name.replace(/[^\w.-]+/g, "-").slice(0, 60) || "ranking"}.csv`;
   return new Response("﻿" + lines.join("\r\n"), {

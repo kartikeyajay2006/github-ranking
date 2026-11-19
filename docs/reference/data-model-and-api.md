@@ -99,7 +99,7 @@ Every CSV field is quoted, embedded quote characters are doubled, and values sta
 
 Route: `GET /api/imports/[id]/export`
 
-The import export is intentionally more detailed than the overall standings export. It reflects the selected competition policies and includes per-component scores, status, selection, member labels, emails, project links, warnings, and policy notes. Completed ranked teams precede non-done records.
+The import export is intentionally more detailed than the overall standings export. Completed teams are sorted from rank 1 through N. The `Team, leader & members` cell groups the team name, leader and full member roster, with each person's blended score next to their name. `Overall team score` is a separate column, followed by component scores, status, selection, emails, project links, warnings, and policy notes. Unfinished teams follow the ranked rows without a rank.
 
 Use the import export when an organizer needs audit/detail; use the team standings export for a concise cross-import leaderboard.
 

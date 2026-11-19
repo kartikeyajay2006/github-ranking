@@ -117,7 +117,7 @@ The **Download full ranking CSV** action returns a single spreadsheet-friendly r
 
 Imported member names come from the original extracted registration record. Manually managed teams do not store real names, so their GitHub handles are used as the member labels. Spreadsheet-formula-like cell values are neutralized, cells are quoted, and a UTF-8 byte-order mark helps common spreadsheet applications read non-ASCII names.
 
-The full export uses score order and includes every team once. It is intentionally separate from the per-import CSV, which also includes project components, selected/cut-off status, failed or pending teams, and source notes.
+The full export uses score order and includes every team once. The per-import CSV has the competition's rank 1 through N and groups the team name, leader, and members into one roster column, with each person's score beside their name and the overall score in its own column. It also includes project components, selected/cut-off status, failed or pending teams, and source notes.
 
 ## 🟠 Upload and competitions
 

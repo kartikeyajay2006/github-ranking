@@ -187,8 +187,9 @@ The import detail view gives one competition its own rank context and controls.
 - 🟢 Rank is computed across the import's completed results, not merely the visible search subset.
 - 🟢 Progress distinguishes completed teams from failed and waiting work.
 - 🟢 The ranking score can blend profile and best-project scores according to the saved policy.
-- 🟢 The per-import **Export CSV** includes completed ranked teams in score order and includes non-completed teams after the ranking rows for auditability.
-- 🟢 The per-import CSV carries team, score, band, selected status, component scores, leader fields, member labels/handles, emails, project references, status, warnings/notes, and scoring policy.
+- 🟢 The per-import **Export CSV** includes completed ranked teams in score order (rank 1 through N) and includes non-completed teams after the ranking rows for auditability.
+- 🟢 One `Team, leader & members` cell groups the team name, leader, and all member names/handles. It includes each person's blended individual score beside their name.
+- 🟢 `Overall team score` is a separate column, followed by band, selected status, weighted GitHub/project totals, member emails, project links, per-member component details, status, warnings/notes, and scoring policy.
 - 🟢 The all-team export on `/teams` is different: it is a concise complete standings file covering all teams in the system.
 
 CSV cells are quoted and formula-like values are prefixed to reduce spreadsheet formula injection. The UTF-8 BOM improves compatibility with spreadsheet software that otherwise guesses the wrong encoding.
