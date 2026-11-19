@@ -191,6 +191,7 @@ The import detail view gives one competition its own rank context and controls.
 - 🟢 One `Team, leader & members` cell groups the team name, leader, and all member names/handles. It includes each person's blended individual score beside their name.
 - 🟢 `Overall team score` is a separate column. Dedicated columns show the designated leader's email, other members' emails, and other members' colleges; the leader is excluded from both member-only columns. Remaining columns show band, selection, weighted GitHub/project totals, project links, per-member component details, status, warnings/notes, and scoring policy.
 - 🟡 College values are retained from structured registration rows when available. Existing imports created before college extraction was added do not contain this data; reimport the source document to populate colleges.
+- 🟢 The overall `/teams` CSV and team detail view enrich names, emails, colleges, and leader roles from the supplied DevForge registration sheet, matched to the current team roster; saved import values provide a fallback.
 - 🟢 The all-team export on `/teams` is different: it is a concise complete standings file covering all teams in the system.
 
 CSV cells are quoted and formula-like values are prefixed to reduce spreadsheet formula injection. The UTF-8 BOM improves compatibility with spreadsheet software that otherwise guesses the wrong encoding.

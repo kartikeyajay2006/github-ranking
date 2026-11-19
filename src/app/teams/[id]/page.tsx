@@ -10,6 +10,7 @@ import { scoreTeam } from "@/lib/teamscore";
 import { getSummaries, getTeam, jobNames } from "@/lib/store";
 import { importTeamFor } from "@/lib/imports/jobs";
 import { personScore, teamScore } from "@/lib/scoring/project";
+import { enrichRegistrationRoster } from "@/lib/imports/source-roster";
 
 type Props = { params: Promise<{ id: string }>; searchParams: Promise<{ skipped?: string }> };
 
@@ -35,6 +36,26 @@ export default async function TeamPage({ params, searchParams }: Props) {
   const imported = team.jobId ? importTeamFor(team.id) : null;
   const ranking = imported?.breakdown ? teamScore(imported.breakdown, imported.job.projectWeight, imported.job.projectMissing) : null;
   const w = imported?.job.projectWeight ?? 0;
+  const registrationReferences = imported
+    ? imported.members.map((member, index) => ({
+        name: member.name,
+        github: member.github,
+        email: member.email,
+        college: member.college ?? null,
+        leader: imported.leader === index || member.leader,
+      }))
+    : [
+        ...members.map((member) => ({ name: member.profile?.name ?? null, github: member.login, email: null, college: null, leader: member.login.toLowerCase() === team.leader?.toLowerCase() })),
+        ...team.absent.map((member) => ({ name: member.name, github: member.github, email: null, college: null, leader: member.label.toLowerCase() === team.leader?.toLowerCase() })),
+      ];
+  const enrichedRoster = await enrichRegistrationRoster(team.name, registrationReferences);
+  const registrationRows = enrichedRoster.map((member, index) => ({
+    ...member,
+    key: member.github?.toLowerCase() || `${member.name ?? "member"}-${index}`,
+    name: member.name?.trim() || (member.github ? `@${member.github}` : "Unnamed member"),
+    college: member.college?.trim() || null,
+    isLeader: member.leader,
+  }));
 
   return (
     <div className="wrap">
@@ -92,6 +113,40 @@ export default async function TeamPage({ params, searchParams }: Props) {
           </div>
         </div>
       </header>
+
+      {(imported || registrationRows.some((member) => member.email || member.college)) && (
+        <section className="section" aria-labelledby="registration-roster">
+          <div className="section-head">
+            <h2 id="registration-roster">Registration details</h2>
+            <span className="aside">Names, emails, GitHub accounts, and colleges from the source document</span>
+          </div>
+          <div style={{ overflowX: "auto" }}>
+            <table className="standings" style={{ marginTop: 12, minWidth: 720 }}>
+              <thead>
+                <tr>
+                  <th scope="col">Role</th>
+                  <th scope="col">Member</th>
+                  <th scope="col">GitHub</th>
+                  <th scope="col">Email</th>
+                  <th scope="col">College</th>
+                </tr>
+              </thead>
+              <tbody>
+                {registrationRows.map((member) => (
+                  <tr key={member.key}>
+                    <td>{member.isLeader ? "Leader" : "Member"}</td>
+                    <td>{member.name}</td>
+                    <td className="mono">{member.github ? `@${member.github}` : "—"}</td>
+                    <td>{member.email ? <a className="link" href={`mailto:${member.email}`}>{member.email}</a> : "—"}</td>
+                    <td>{member.college ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {registrationRows.length === 0 && <p className="muted">No member contact details were retained in this import.</p>}
+        </section>
+      )}
 
       {imported?.breakdown && ranking && (
         <section className="section" aria-labelledby="ranking-score">

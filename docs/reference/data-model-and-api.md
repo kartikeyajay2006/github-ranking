@@ -93,7 +93,7 @@ The export uses `teamStandings()` as the source, so it shares score ordering, im
 | `Member GitHub usernames` | Semicolon-delimited handles for usable accounts. |
 | `Total score` | Team total at one decimal place; empty if no result exists. |
 
-Every CSV field is quoted, embedded quote characters are doubled, and values starting with spreadsheet formula characters are prefixed with an apostrophe. The response uses `text/csv; charset=utf-8`, a UTF-8 BOM, a stable attachment filename, and `Cache-Control: no-store`.
+The score-ordered export contains rank, team and leader identity, leader email, member names and GitHub usernames, member emails labeled by person, colleges labeled by person, and total score. Email, college, and source leader role are matched from the supplied DevForge registration sheet; linked import values provide a fallback. Every CSV field is quoted, embedded quote characters are doubled, and values starting with spreadsheet formula characters are prefixed with an apostrophe. The response uses `text/csv; charset=utf-8`, a UTF-8 BOM, a stable attachment filename, and `Cache-Control: no-store`.
 
 ## 🧾 Import CSV
 
